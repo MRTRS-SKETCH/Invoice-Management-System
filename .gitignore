@@ -1,0 +1,149 @@
+# ==========================================
+# 1. 核心敏感数据与数据库 (Secrets & Database)
+# ==========================================
+# 绝对不能提交 SQLite 数据库文件，防止个人记账和开销流水泄露
+*.db
+*.sqlite
+*.sqlite3
+invoice_system.db
+core_api/data/
+
+# 安全凭证与密钥
+.env
+.env.local
+.env.*.local
+.envrc
+.pem
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+.pypirc
+.streamlit/secrets.toml
+
+# ==========================================
+# 2. Python 后端层 (core_api & Sidecar)
+# ==========================================
+# Python 字节码与缓存
+__pycache__/
+core_api/__pycache__/
+*.py[codz]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境 (隔离打包侧车环境)
+.venv
+.venv/
+/.venvenv/
+venv/
+core_api/venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# 构建、打包与 Nuitka/PyInstaller 产物
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+.pybuilder/
+/target
+target/
+__pypackages__/
+
+# Windows 临时编译产物与缓存
+**/windows/flutter/ephemeral/
+**/windows/flutter/generated_*.cmake
+**/windows/flutter/ephemeral_*.cmake
+**/windows/flutter/flutter_export_environment.cmake
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+
+# Windows 最终打包生成的 exe 文件夹
+**/build/
+
+# 包管理锁文件 (视协作情况决定是否注释)
+.pdm-python
+.pdm-build/
+.pixi
+
+# ==========================================
+# 3. Flutter 前端层 (app_ui)
+# ==========================================
+# Flutter 运行与编译缓存
+app_ui/build/
+app_ui/.dart_tool/
+app_ui/.flutter-plugins
+app_ui/.flutter-plugins-dependencies
+app_ui/.metadata
+app_ui/.pub-cache/
+app_ui/.pub/
+app_ui/.packages
+
+# ==========================================
+# 4. C / C++ 编译文件 (为 Nuitka 和 Windows 原生插件服务)
+# ==========================================
+*.o
+*.obj
+*.exe
+*.dll
+*.dylib
+*.out
+*.a
+*.lib
+cython_debug/
+
+# ==========================================
+# 5. IDE与编辑器配置 (IDEs & Editors)
+# ==========================================
+# JetBrains (PyCharm, IntelliJ, etc.)
+.idea/
+*.iws
+*.iml
+*.ipr
+/shelf/
+/workspace.xml
+/httpRequests/
+
+# Visual Studio Code & Visual Studio
+.vscode/
+*.code-workspace
+tempCodeRunnerFile.py
+.vs/
+[Dd]ebug/
+[Rr]elease/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# 其他辅助开发工具
+.deepcode/
+.codex_tmp/
+.gemini/
+*.sublime-workspace
+*.swp
+\#*\#
+/.settings
+.spyderproject
+.spyproject
+.ropeproject
+
+# ==========================================
+#
