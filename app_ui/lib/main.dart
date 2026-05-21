@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import 'expense_flow_page.dart';
 
 void main() async {
   // 必须确保 Flutter 绑定初始化，才能与原生窗口通信
@@ -161,9 +162,7 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
         ),
       ),
       // 页面 1: 业务流水
-      const Center(
-        child: Text('业务流水 (Expense Flow) - 待开发', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-      ),
+      const ExpenseFlowPage(),
       // 页面 2: 发票管理
       const Center(
         child: Text('发票与 PDF 管理 (Invoice Manager) - 待开发', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),

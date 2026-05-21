@@ -1,35 +1,26 @@
 from fastapi import FastAPI
-from database import init_db, generate_uid
 import uvicorn
+from fastapi.responses import RedirectResponse
 
-# 1. 启动时执行数据库初始化
-# 这样可以确保每次启动 FastAPI 时，表结构都已经准备就绪
-init_db()
+# 使用绝对路径从 app 包中导入所需模块
+from app.database import engine
+from app import models
+from app.routers import expenses
 
-# 2. 实例化 FastAPI 应用
-app = FastAPI(
-    title="财务与发票管理系统 API",
-    description="为 Flutter 桌面端提供本地数据和文件流转支持的 Python 侧车服务",
-    version="1.0.0"
-)
+# 启动时建表
+models.Base.metadata.create_all(bind=engine)
 
-# 3. 编写最简单的启动测试接口
-@app.get("/")
-def read_root():
-    return {
-        "status": "success",
-        "message": "后端引擎已启动！FastAPI 正在为您服务。"
-    }
+# 初始化总应用
+app = FastAPI(title="对公报销与发票管理系统 API", version="1.0.0")
 
-# 4. 编写一个获取新 UID 的测试接口，验证我们的策略
-@app.get("/api/test/generate-uid")
-def test_uid():
-    new_uid = generate_uid()
-    return {
-        "status": "success",
-        "generated_uid": new_uid
-    }
+# 将访问者引流到可视化接口面板
+@app.get("/", include_in_schema=False)
+def redirect_to_docs():
+    return RedirectResponse(url="/docs")
+
+# 挂载业务路由
+app.include_router(expenses.router)
 
 if __name__ == "__main__":
-    # 保持进程常驻，监听本地 8000 端口
+    # 作为唯一的启动入口
     uvicorn.run(app, host="127.0.0.1", port=8000)
