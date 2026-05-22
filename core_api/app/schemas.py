@@ -37,12 +37,30 @@ class ExpenseUpdate(BaseModel):
     project_name: Optional[str] = None
     related_persons: Optional[str] = None
 
-
 # 3. 向前端返回数据校验：强行要求携带主键 uuuid
 class ExpenseResponse(ExpenseBase):
     uuuid: str
 
     # Pydantic v2 配置：允许兼容 SQLAlchemy ORM 对象
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# --- 发票 PDF 绑定 ---
+# 接收 Flutter 传来的本地物理路径和业务流水ID
+class InvoiceBindRequest(BaseModel):
+    expense_uuuid: str = Field(..., description="要绑定的业务流水主键 uuuid")
+    source_file_path: str = Field(..., description="Windows系统上的本地物理绝对路径 (如 D:\\Downloads\\fapiao.pdf)")
+
+
+# 返回给前端的渲染数据
+class InvoiceResponse(BaseModel):
+    uuuid: str
+    expense_uuuid: str
+    file_name: str
+    saved_path: str  # Flutter 拿到这个相对路径后，就可以直接加载本地 PDF
+
     model_config = {
         "from_attributes": True
     }

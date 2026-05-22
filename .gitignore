@@ -6,7 +6,7 @@
 *.sqlite
 *.sqlite3
 invoice_system.db
-core_api/data/
+data/
 
 # 安全凭证与密钥
 .env

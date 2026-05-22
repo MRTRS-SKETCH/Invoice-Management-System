@@ -1,14 +1,14 @@
-# core_api/app/models.py
-import uuid
-from sqlalchemy import Column, String, Float, Date, Boolean
+from sqlalchemy import Column, String, Float, Date, Boolean,DateTime
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.sql import func
 
 Base = declarative_base()
 
 
 def generate_uuuid():
     """生成全局唯一的 uuuid 字符串作为主键"""
-    return str(uuid.uuid4())
+    from uuid import uuid4
+    return str(uuid4())
 
 
 class ExpenseRecord(Base):
@@ -35,3 +35,20 @@ class ExpenseRecord(Base):
     has_company_invoice = Column(Boolean, default=False)  # 是否有公司发票
     project_name = Column(String, nullable=True)  # 报销项目名称
     related_persons = Column(String, nullable=True)  # 报销单有关人
+
+
+class InvoiceRecord(Base):
+    __tablename__ = "invoices"
+
+    # 核心标识
+    uuuid = Column(String, primary_key=True, default=generate_uuuid, index=True)
+
+    # 关系绑定：对应哪一笔开销
+    expense_uuuid = Column(String, nullable=False, index=True)
+
+    # 文件物理信息
+    file_name = Column(String, nullable=False)  # 原始文件名（例如：滴滴出行发票.pdf）
+    saved_path = Column(String, nullable=False)  # 系统内的相对保存路径（例如：data/pdfs/xxx.pdf）
+
+    # 绑定时间
+    created_at = Column(DateTime, default=func.now())

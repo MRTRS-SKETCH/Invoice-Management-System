@@ -1,11 +1,10 @@
 from fastapi import FastAPI
-import uvicorn
 from fastapi.responses import RedirectResponse
 
 # 使用绝对路径从 app 包中导入所需模块
 from app.database import engine
 from app import models
-from app.routers import expenses
+from app.routers import expenses, invoices
 
 # 启动时建表
 models.Base.metadata.create_all(bind=engine)
@@ -20,7 +19,9 @@ def redirect_to_docs():
 
 # 挂载业务路由
 app.include_router(expenses.router)
+app.include_router(invoices.router)
 
 if __name__ == "__main__":
     # 作为唯一的启动入口
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    from uvicorn import run
+    run(app, host="127.0.0.1", port=8000)

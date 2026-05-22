@@ -1,13 +1,46 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';  // 搞清理进程时加的，关于 debugPrint
 import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'expense_flow_page.dart';
+import 'invoice_manager_page.dart';
+
+// 🧙‍♂️ 专属清道夫：扫描并强杀占用 8000 端口的进程
+Future<void> _clearPort8000() async {
+  if (!Platform.isWindows) return;
+  
+  try {
+    // 1. 调用 Windows 底层 netstat 命令查找 8000 端口
+    final result = await Process.run('cmd', ['/c', 'netstat -ano | findstr :8000']);
+    final lines = result.stdout.toString().split('\n');
+    
+    for (var line in lines) {
+      if (line.contains('LISTENING')) {
+        // 2. 提取出进程的 PID
+        final parts = line.trim().split(RegExp(r'\s+'));
+        if (parts.isNotEmpty) {
+          final pid = parts.last;
+          if (pid != '0') {
+            // 3. 调用 taskkill 强制击杀该 PID
+            await Process.run('taskkill', ['/F', '/PID', pid]);
+            debugPrint('🔫 已自动清扫占用 8000 端口的幽灵进程 (PID: $pid)');
+          }
+        }
+      }
+    }
+  } catch (e) {
+    debugPrint('清理端口时发生错误: $e');
+  }
+}
 
 void main() async {
   // 必须确保 Flutter 绑定初始化，才能与原生窗口通信
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 👉 核心改动：在一切开始之前，先执行清场魔法！
+  await _clearPort8000();
   
   // 初始化 window_manager
   await windowManager.ensureInitialized();
@@ -161,12 +194,9 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
           ],
         ),
       ),
-      // 页面 1: 业务流水
-      const ExpenseFlowPage(),
-      // 页面 2: 发票管理
-      const Center(
-        child: Text('发票与 PDF 管理 (Invoice Manager) - 待开发', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-      ),
+      
+      const ExpenseFlowPage(),  // 页面 1: 业务流水
+      const InvoiceManagerPage(),  // 页面 2: 发票管理
     ];
 
     return Scaffold(

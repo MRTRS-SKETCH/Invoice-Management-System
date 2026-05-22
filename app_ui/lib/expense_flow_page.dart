@@ -11,7 +11,7 @@ class ExpenseFlowPage extends StatefulWidget {
 }
 
 class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
-  // 绑定 Python 后端路由前缀 (根据之前的设定)
+  // 绑定 Python 后端路由前缀
   final String apiUrl = 'http://127.0.0.1:8000/api/expenses/';
   
   List<dynamic> _expenses = [];
@@ -68,6 +68,39 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     }
   }
 
+  // PATCH: 局部更新开销状态 (状态流转)
+  Future<void> _updateExpenseStatus(String uuuid, String newStatus) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$apiUrl$uuuid'),
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode({'status': newStatus}),
+      );
+
+      if (response.statusCode == 200) {
+        _fetchExpenses(); // 状态更新成功后刷新表格
+      } else {
+        _showError('状态流转失败: ${response.body}');
+      }
+    } catch (e) {
+      _showError('网络异常: $e');
+    }
+  }
+
+  // DELETE: 删除开销记录
+  Future<void> _deleteExpense(String uuuid) async {
+    try {
+      final response = await http.delete(Uri.parse('$apiUrl$uuuid'));
+      if (response.statusCode == 200) {
+        _fetchExpenses(); // 删除成功后刷新表格
+      } else {
+        _showError('删除失败: ${response.body}');
+      }
+    } catch (e) {
+      _showError('网络异常: $e');
+    }
+  }
+
   // 辅助函数：显示错误弹窗
   void _showError(String message) {
     if (!mounted) return;
@@ -76,7 +109,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     );
   }
 
-  // 显示新增记录的毛玻璃弹窗
+  // UI: 显示新增记录的毛玻璃弹窗
   void _showAddDialog() {
     final nameController = TextEditingController();
     final amountController = TextEditingController();
@@ -84,7 +117,6 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     showDialog(
       context: context,
       builder: (context) {
-        // 弹窗也使用毛玻璃效果
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: AlertDialog(
@@ -136,12 +168,43 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     );
   }
 
+  // UI: 显示删除确认的毛玻璃弹窗 (防呆设计)
+  void _showDeleteConfirmDialog(String uuuid, String expenseTitle) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: AlertDialog(
+            backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.8),
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('删除确认'),
+            content: Text('确定要删除“$expenseTitle”这笔流水吗？此操作不可逆。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                onPressed: () {
+                  Navigator.pop(context); // 先关闭弹窗
+                  _deleteExpense(uuuid);  // 再执行删除请求
+                },
+                child: const Text('确认删除'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 外层容器，提供基础的背景环境
     return Container(
       padding: const EdgeInsets.all(24.0),
-      // 这里可以放一张淡雅的背景图，毛玻璃效果会更惊艳。现在用渐变色代替。
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [Colors.blue.shade50, Colors.purple.shade50],
@@ -152,7 +215,6 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 顶部操作栏
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -175,18 +237,16 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
             ],
           ),
           const SizedBox(height: 24),
-
-          // 核心数据表格：毛玻璃容器
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(24), // 圆角裁切必须有
+              borderRadius: BorderRadius.circular(24),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0), // 核心模糊属性
+                filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.4), // 半透明白色底
+                    color: Colors.white.withOpacity(0.4),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5), // 高光描边
+                    border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
                   ),
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
@@ -207,17 +267,20 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     return SingleChildScrollView(
       child: DataTable(
         headingTextStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-        dataRowMaxHeight: 60, // 稍微增高行距，适合桌面端点击
+        dataRowMaxHeight: 60,
         columns: const [
           DataColumn(label: Text('事由')),
           DataColumn(label: Text('金额')),
           DataColumn(label: Text('发生日期')),
           DataColumn(label: Text('状态')),
           DataColumn(label: Text('唯一标识')),
+          DataColumn(label: Text('操作')), // 新增的操作列
         ],
         rows: _expenses.map((expense) {
-          // 状态标签的颜色逻辑
           final status = expense['status'] ?? '未知';
+          final title = expense['title'] ?? '-';
+          final uuuid = expense['uuuid']?.toString() ?? '';
+          
           Color statusColor = Colors.grey;
           if (status == '待开票') statusColor = Colors.orange;
           if (status == '已开票') statusColor = Colors.blue;
@@ -225,7 +288,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
           if (status == '已完结') statusColor = Colors.green;
 
           return DataRow(cells: [
-            DataCell(Text(expense['title'] ?? '-', style: const TextStyle(fontWeight: FontWeight.w500))),
+            DataCell(Text(title, style: const TextStyle(fontWeight: FontWeight.w500))),
             DataCell(Text('¥ ${expense['amount']?.toString() ?? '0.00'}', 
               style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.bold))),
             DataCell(Text(expense['incurred_date'] ?? '-')),
@@ -240,14 +303,68 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
               ),
             ),
             DataCell(Text(
-                expense['uuuid'] != null && expense['uuuid'].toString().length > 8
-                    ? '${expense['uuuid'].toString().substring(0, 8)}...'
-                    : (expense['uuuid'] ?? '-').toString(),
+                uuuid.length > 8 ? '${uuuid.substring(0, 8)}...' : uuuid,
                 style: const TextStyle(color: Colors.black54, fontSize: 12),
             )),
+            DataCell(
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildStatusActionBtn(uuuid, status), // 动态状态流转按钮
+                  if (uuuid.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      color: Colors.redAccent,
+                      tooltip: '删除记录',
+                      onPressed: () => _showDeleteConfirmDialog(uuuid, title),
+                    ),
+                ],
+              ),
+            ),
           ]);
         }).toList(),
       ),
+    );
+  }
+
+  // 辅助组件：根据当前状态，动态生成下一步的流转按钮
+  Widget _buildStatusActionBtn(String uuuid, String currentStatus) {
+    if (uuuid.isEmpty) return const SizedBox.shrink();
+
+    String nextStatus = '';
+    String btnText = '';
+    Color btnColor = Colors.grey;
+    IconData btnIcon = Icons.arrow_forward;
+
+    if (currentStatus == '待开票') {
+      nextStatus = '已开票';
+      btnText = '开票';
+      btnColor = Colors.blue;
+      btnIcon = Icons.receipt_long;
+    } else if (currentStatus == '已开票') {
+      nextStatus = '核销中';
+      btnText = '去报销';
+      btnColor = Colors.purple;
+      btnIcon = Icons.account_balance_wallet;
+    } else if (currentStatus == '核销中') {
+      nextStatus = '已完结';
+      btnText = '完结';
+      btnColor = Colors.green;
+      btnIcon = Icons.check_circle;
+    }
+
+    if (nextStatus.isEmpty) {
+      return const SizedBox(width: 80, child: Center(child: Text('-', style: TextStyle(color: Colors.grey))));
+    }
+
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        foregroundColor: btnColor,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      ),
+      icon: Icon(btnIcon, size: 16),
+      label: Text(btnText, style: const TextStyle(fontWeight: FontWeight.bold)),
+      onPressed: () => _updateExpenseStatus(uuuid, nextStatus),
     );
   }
 }

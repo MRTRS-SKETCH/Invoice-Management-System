@@ -51,3 +51,19 @@ def delete_expense(db: Session, uuuid: str) -> bool:
     db.delete(db_expense)
     db.commit()
     return True
+
+def create_invoice(db: Session, expense_uuuid: str, file_name: str, saved_path: str):
+    """物理记录一条发票与业务的绑定关系"""
+    db_invoice = models.InvoiceRecord(
+        expense_uuuid=expense_uuuid,
+        file_name=file_name,
+        saved_path=saved_path
+    )
+    db.add(db_invoice)
+    db.commit()
+    db.refresh(db_invoice)
+    return db_invoice
+
+def get_invoices_by_expense(db: Session, expense_uuuid: str):
+    """根据业务流水 uuuid 获取其绑定的所有发票"""
+    return db.query(models.InvoiceRecord).filter_by(expense_uuuid=expense_uuuid).all()
