@@ -7,6 +7,7 @@
 *.sqlite3
 invoice_system.db
 data/
+REASONIX.md
 
 # 安全凭证与密钥
 .env
@@ -144,6 +145,7 @@ tempCodeRunnerFile.py
 .spyderproject
 .spyproject
 .ropeproject
+.reasonix/
 
 # ==========================================
 #

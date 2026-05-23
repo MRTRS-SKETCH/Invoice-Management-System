@@ -1,8 +1,6 @@
 from sqlalchemy import Column, String, Float, Date, Boolean,DateTime
-from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
-
-Base = declarative_base()
+from app.database import Base
 
 
 def generate_uuuid():
