@@ -8,6 +8,7 @@
 invoice_system.db
 data/
 REASONIX.md
+build_out/
 
 # 安全凭证与密钥
 .env

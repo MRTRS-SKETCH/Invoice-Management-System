@@ -6,13 +6,23 @@ import 'package:window_manager/window_manager.dart';
 import 'expense_flow_page.dart';
 import 'invoice_manager_page.dart';
 import 'dashboard_page.dart';
+import 'package:flutter/foundation.dart';
+
+// 1. 全局持有后端二进制文件的进程句柄
+Process? _backendProcess;
 
 void main() async {
-  // 必须确保 Flutter 绑定初始化，才能与原生窗口通信
+  // 必须确保 Flutter 绑定初始化，才能与原生系统通信
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化 window_manager
   await windowManager.ensureInitialized();
+
+  // 🚨 2. 开局自动清场：强杀后台可能残留的旧 main.exe，防止端口冲突
+  await _cleanGhostProcess();
+
+  // 🚀 3. 伴随启动：拉起我们刚刚用 Nuitka 编译出来的独立免安装引擎
+  await _startBackendEngine();
 
   WindowOptions windowOptions = const WindowOptions(
     size: Size(1024, 768),
@@ -28,8 +38,74 @@ void main() async {
     await windowManager.focus();
   });
 
+  // 🕵️‍♂️ 4. 注册窗口监听器：当用户点击右上角 [X] 关闭软件时，自动杀死后端
+  windowManager.addListener(_WindowCloseListener());
+
   runApp(const InvoiceSystemApp());
 }
+
+// 核心函数：未来你要修改启动路径，只需要改这里！
+Future<void> _startBackendEngine() async {
+  String exePath;
+  List<String> processArgs;
+
+  // 智能判断：当前是否处于 Debug 开发模式？
+  if (kDebugMode) {
+    // 【开发模式】：使用你原来的 Conda/venv 环境直接跑 main.py
+    debugPrint('【Sidecar】🐛 开发模式：正在使用本地 Python 环境热启动...');
+    exePath = r'E:\flutter\Invoice-Management-System\core_api\venv\Scripts\python.exe';
+    processArgs = [r'E:\flutter\Invoice-Management-System\core_api\main.py'];
+  } else {
+    // 【生产模式】：当你执行 flutter build windows 打包正式版时，会自动走到这里
+    debugPrint('【Sidecar】🚀 生产模式：正在拉起 Nuitka 独立免安装引擎...');
+    String currentDir = p.dirname(Platform.resolvedExecutable);
+    exePath = p.join(currentDir, 'api_server', 'main.exe');
+    processArgs = [];
+  }
+
+  try {
+    _backendProcess = await Process.start(exePath, processArgs);
+    
+    // 管道监听：把后端的输出重定向到 Flutter 控制台
+    _backendProcess!.stdout.transform(utf8.decoder).listen((data) {
+      debugPrint('【后端】: $data');
+    });
+    _backendProcess!.stderr.transform(utf8.decoder).listen((data) {
+      debugPrint('【后端错误】: $data');
+    });
+  } catch (e) {
+    debugPrint('❌ 后端引擎启动严重失败: $e');
+  }
+}
+
+// 开局清道夫：强杀本地可能残留的同名进程
+Future<void> _cleanGhostProcess() async {
+  try {
+    debugPrint('【清道夫】正在检查并清理残留的后端进程...');
+    // 强杀所有叫 main.exe 的进程树
+    await Process.run('taskkill', ['/F', '/IM', 'main.exe', '/T']);
+  } catch (e) {
+    // 如果没有残留，taskkill 会报错，这里直接无视即可
+  }
+}
+
+// 终极宿主绑定：窗口关闭时，不留任何后患
+class _WindowCloseListener extends WindowListener {
+  @override
+  void onWindowClose() async {
+    debugPrint('【宿主销毁】检测到 Flutter 窗口关闭，正在释放本地服务...');
+    
+    if (_backendProcess != null) {
+      bool isKilled = _backendProcess!.kill();
+      debugPrint('【Sidecar】免安装后端引擎 (PID: ${_backendProcess!.pid}) 销毁状态: $isKilled');
+    }
+    
+    // 确保释放完毕后再完全撤销窗口
+    await windowManager.destroy();
+  }
+}
+
+// ================== UI ==================
 
 class InvoiceSystemApp extends StatelessWidget {
   const InvoiceSystemApp({super.key});
@@ -38,8 +114,9 @@ class InvoiceSystemApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Invoice System',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey), // 偏商务的蓝灰色调
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey),
         useMaterial3: true,
       ),
       home: const MainLayout(),
@@ -47,9 +124,6 @@ class InvoiceSystemApp extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------
-// 主应用骨架 (Main Layout) 包含侧边栏与进程管理
-// ---------------------------------------------------------
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
 
@@ -57,98 +131,20 @@ class MainLayout extends StatefulWidget {
   State<MainLayout> createState() => _MainLayoutState();
 }
 
-// 混入 WindowListener 以监听原生窗口事件
-class _MainLayoutState extends State<MainLayout> with WindowListener {
-  // 侧边栏状态
+class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
 
-  // Python 进程状态
-  Process? _pythonProcess;
-  int? _pythonPid;  // 记录 PID，用于窗口关闭时精确清理
-
-  @override
-  void initState() {
-    super.initState();
-    // 注册窗口事件监听器
-    windowManager.addListener(this);
-    // 启动 Python 侧车进程
-    _startPythonSidecar();
-  }
-
-  @override
-  void dispose() {
-    // 移除监听器
-    windowManager.removeListener(this);
-    super.dispose();
-  }
-
-  /// 核心逻辑：拉起 Python 进程
-  Future<void> _startPythonSidecar() async {
-    try {
-      // 保持你之前成功配置的 Conda 绝对路径
-      final pythonExecutable = "C:/Users/ninpa/miniconda3/envs/Invoice-Management-System/python.exe";
-      final currentDir = Directory.current.path;
-      final mainPyScript = p.normalize(p.join(currentDir, '..', 'core_api', 'main.py'));
-
-      debugPrint("尝试启动 Python 进程: $pythonExecutable $mainPyScript");
-
-      // 启动进程
-      _pythonProcess = await Process.start(
-        pythonExecutable,
-        [mainPyScript],
-        environment: {'PYTHONIOENCODING': 'utf-8'},
-        runInShell: false, 
-      );
-
-      _pythonPid = _pythonProcess!.pid;
-      debugPrint("后端服务已成功启动 (PID: $_pythonPid)");
-
-      // 监听 Python 进程的标准输出，强制 UTF-8 解码避免乱码
-      _pythonProcess?.stdout.listen((event) {
-        debugPrint('【Python Sidecar 日志】: ${utf8.decode(event, allowMalformed: true)}');
-      });
-
-      _pythonProcess?.stderr.listen((event) {
-        debugPrint('【Python Sidecar 错误】: ${utf8.decode(event, allowMalformed: true)}');
-      });
-
-    } catch (e) {
-      debugPrint("进程启动异常: $e");
-    }
-  }
-
-  /// 核心逻辑：拦截窗口关闭事件并精确清理孤儿进程
-  @override
-  void onWindowClose() async {
-    debugPrint("捕获到窗口关闭事件，准备清理环境...");
-
-    if (_pythonPid != null) {
-      if (Platform.isWindows) {
-        // Windows: 通过记录的 PID 精确杀进程树，不误伤其他服务
-        await Process.run('taskkill', ['/PID', _pythonPid.toString(), '/T', '/F']);
-        debugPrint("已通过 taskkill 终止 Python 进程树 (PID: $_pythonPid)");
-      } else {
-        _pythonProcess?.kill(ProcessSignal.sigterm);
-      }
-    }
-
-    // 销毁窗口并退出应用
-    await windowManager.destroy();
-  }
+  final List<Widget> pages = const [
+    DashboardPage(),
+    ExpenseFlowPage(),
+    InvoiceManagerPage(),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    // 动态构建右侧页面，以便将后端的连接状态传递给仪表盘显示
-    final List<Widget> pages = [
-      const DashboardPage(),  // 页面 0: 全局看板
-      const ExpenseFlowPage(),  // 页面 1: 业务流水
-      const InvoiceManagerPage(),  // 页面 2: 发票管理
-    ];
-
     return Scaffold(
       body: Row(
         children: [
-          // 1. 左侧导航侧边栏
           NavigationRail(
             extended: true,
             minExtendedWidth: 200,
@@ -176,14 +172,9 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
               ),
             ],
           ),
-          
-          // 侧边栏与内容区之间的垂直分割线
           const VerticalDivider(thickness: 1, width: 1),
-          
-          // 2. 右侧动态内容区
           Expanded(
             child: Container(
-              // 给背景加一点极浅的灰色，区分导航栏和内容区
               color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
               child: pages[_selectedIndex],
             ),
