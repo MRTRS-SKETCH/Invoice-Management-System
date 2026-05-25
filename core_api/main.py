@@ -1,16 +1,43 @@
+import logging
+from pathlib import Path
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 # 使用绝对路径从 app 包中导入所需模块
 from app.database import engine
 from app import models
-from app.routers import expenses, invoices
+from app.routers import expenses, invoices, dashboard
+
+# ── 日志配置 ──
+LOG_DIR = Path(__file__).resolve().parent / "data"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "app.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger("core_api")
 
 # 启动时建表
 models.Base.metadata.create_all(bind=engine)
 
 # 初始化总应用
 app = FastAPI(title="对公报销与发票管理系统 API", version="1.0.0")
+
+# ── CORS 中间件 ──
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 将访问者引流到可视化接口面板
 @app.get("/", include_in_schema=False)
@@ -20,6 +47,7 @@ def redirect_to_docs():
 # 挂载业务路由
 app.include_router(expenses.router)
 app.include_router(invoices.router)
+app.include_router(dashboard.router)
 
 if __name__ == "__main__":
     # 作为唯一的启动入口

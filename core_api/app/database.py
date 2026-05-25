@@ -22,6 +22,6 @@ Base = declarative_base()
 def get_db():
     db = SessionLocal() # 【开门】前端一发来请求，立刻创建一个专属的数据库连接
     try:
-        yield db        # 【干活】把这个连接“借给”你的 API 接口（比如去执行增删改查）
+        yield db        # 【干活】把这个连接“借给”你的 API 接口
     finally:
-        db.close()      # 【关门】干完活后（或者即使程序崩溃报错了），强制关闭连接，释放资源
+        db.close()      # 【关门】干完活后强制关闭连接，释放资源

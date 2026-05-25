@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'config.dart';
 
 class ExpenseFlowPage extends StatefulWidget {
   const ExpenseFlowPage({super.key});
@@ -11,11 +12,17 @@ class ExpenseFlowPage extends StatefulWidget {
 }
 
 class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
-  // 绑定 Python 后端路由前缀
-  final String apiUrl = 'http://127.0.0.1:8000/api/expenses/';
-  
+  // 后端路由前缀（统一使用全局配置）
+  String get _apiUrl => '${AppConfig.baseUrl}/api/expenses/';
+
   List<dynamic> _expenses = [];
   bool _isLoading = true;
+
+  // ── 筛选状态 ──
+  final TextEditingController _searchController = TextEditingController();
+  String? _statusFilter;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   @override
   void initState() {
@@ -23,13 +30,20 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     _fetchExpenses();
   }
 
-  // GET: 获取开销流水列表
+  // GET: 获取开销流水列表（携带筛选参数）
   Future<void> _fetchExpenses() async {
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse(apiUrl));
+      final params = <String, String>{};
+      final search = _searchController.text.trim();
+      if (search.isNotEmpty) params['search'] = search;
+      if (_statusFilter != null) params['status'] = _statusFilter!;
+      if (_dateFrom != null) params['date_from'] = _dateFrom!.toIso8601String().split('T')[0];
+      if (_dateTo != null) params['date_to'] = _dateTo!.toIso8601String().split('T')[0];
+
+      final uri = Uri.parse(_apiUrl).replace(queryParameters: params.isNotEmpty ? params : null);
+      final response = await http.get(uri);
       if (response.statusCode == 200) {
-        // 使用 utf8.decode 防止中文乱码
         setState(() {
           _expenses = jsonDecode(utf8.decode(response.bodyBytes));
         });
@@ -48,7 +62,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     try {
       final String today = DateTime.now().toIso8601String().split('T')[0];
       final response = await http.post(
-        Uri.parse(apiUrl),
+        Uri.parse(_apiUrl),
         headers: {'Content-Type': 'application/json; charset=UTF-8'},
         body: jsonEncode({
           'title': name,
@@ -72,7 +86,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
   Future<void> _updateExpenseStatus(String uuuid, String newStatus) async {
     try {
       final response = await http.patch(
-        Uri.parse('$apiUrl$uuuid'),
+        Uri.parse('$_apiUrl$uuuid'),
         headers: {'Content-Type': 'application/json; charset=UTF-8'},
         body: jsonEncode({'status': newStatus}),
       );
@@ -90,7 +104,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
   // DELETE: 删除开销记录
   Future<void> _deleteExpense(String uuuid) async {
     try {
-      final response = await http.delete(Uri.parse('$apiUrl$uuuid'));
+      final response = await http.delete(Uri.parse('$_apiUrl$uuuid'));
       if (response.statusCode == 200) {
         _fetchExpenses(); // 删除成功后刷新表格
       } else {
@@ -106,6 +120,32 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+    );
+  }
+
+  /// 状态流转确认弹窗 — 防止误操作
+  void _showStatusConfirmDialog(String uuuid, String currentStatus, String nextStatus, String btnText) {
+    showDialog(
+      context: context,
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: AlertDialog(
+          backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('确认状态变更'),
+          content: Text('确定要将该笔流水从「$currentStatus」变更为「$nextStatus」吗？'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _updateExpenseStatus(uuuid, nextStatus);
+              },
+              child: Text(btnText),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -201,6 +241,119 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     );
   }
 
+  /// 构建筛选栏
+  Widget _buildFilterBar() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          // 搜索框
+          SizedBox(
+            width: 220,
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                hintText: '搜索事由...',
+                prefixIcon: Icon(Icons.search, size: 20),
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onChanged: (_) => _fetchExpenses(),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 状态下拉
+          SizedBox(
+            width: 150,
+            child: DropdownButtonFormField<String?>(
+              value: _statusFilter,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              hint: const Text('全部状态'),
+              items: const [
+                DropdownMenuItem(value: null, child: Text('全部状态')),
+                DropdownMenuItem(value: '待开票', child: Text('待开票')),
+                DropdownMenuItem(value: '已开票', child: Text('已开票')),
+                DropdownMenuItem(value: '待报销', child: Text('待报销')),
+                DropdownMenuItem(value: '核销中', child: Text('核销中')),
+                DropdownMenuItem(value: '已完结', child: Text('已完结')),
+              ],
+              onChanged: (v) {
+                setState(() => _statusFilter = v);
+                _fetchExpenses();
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 日期范围
+          SizedBox(
+            width: 160,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.calendar_today, size: 16),
+              label: Text(_dateFrom != null
+                  ? _dateFrom!.toIso8601String().split('T')[0]
+                  : '开始日期'),
+              onPressed: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _dateFrom ?? DateTime.now(),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                );
+                if (picked != null) {
+                  setState(() => _dateFrom = picked);
+                  _fetchExpenses();
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Text('—', style: TextStyle(color: Colors.grey)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 160,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.calendar_today, size: 16),
+              label: Text(_dateTo != null
+                  ? _dateTo!.toIso8601String().split('T')[0]
+                  : '结束日期'),
+              onPressed: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _dateTo ?? DateTime.now(),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                );
+                if (picked != null) {
+                  setState(() => _dateTo = picked);
+                  _fetchExpenses();
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 清除筛选
+          if (_statusFilter != null || _dateFrom != null || _dateTo != null)
+            IconButton(
+              icon: const Icon(Icons.clear_all),
+              tooltip: '清除筛选',
+              onPressed: () {
+                setState(() {
+                  _searchController.clear();
+                  _statusFilter = null;
+                  _dateFrom = null;
+                  _dateTo = null;
+                });
+                _fetchExpenses();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -236,7 +389,9 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          // 筛选栏
+          _buildFilterBar(),
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
@@ -284,6 +439,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
           Color statusColor = Colors.grey;
           if (status == '待开票') statusColor = Colors.orange;
           if (status == '已开票') statusColor = Colors.blue;
+          if (status == '待报销') statusColor = Colors.deepOrange;
           if (status == '核销中') statusColor = Colors.purple;
           if (status == '已完结') statusColor = Colors.green;
 
@@ -327,7 +483,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     );
   }
 
-  // 辅助组件：根据当前状态，动态生成下一步的流转按钮
+  // 辅助组件：根据当前状态，动态生成下一步的流转按钮（五段状态机）
   Widget _buildStatusActionBtn(String uuuid, String currentStatus) {
     if (uuuid.isEmpty) return const SizedBox.shrink();
 
@@ -342,6 +498,11 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
       btnColor = Colors.blue;
       btnIcon = Icons.receipt_long;
     } else if (currentStatus == '已开票') {
+      nextStatus = '待报销';
+      btnText = '待报销';
+      btnColor = Colors.deepOrange;
+      btnIcon = Icons.assignment_late;
+    } else if (currentStatus == '待报销') {
       nextStatus = '核销中';
       btnText = '去报销';
       btnColor = Colors.purple;
@@ -357,6 +518,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
       return const SizedBox(width: 80, child: Center(child: Text('-', style: TextStyle(color: Colors.grey))));
     }
 
+    // 点击先弹确认窗，防止误操作
     return TextButton.icon(
       style: TextButton.styleFrom(
         foregroundColor: btnColor,
@@ -364,7 +526,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
       ),
       icon: Icon(btnIcon, size: 16),
       label: Text(btnText, style: const TextStyle(fontWeight: FontWeight.bold)),
-      onPressed: () => _updateExpenseStatus(uuuid, nextStatus),
+      onPressed: () => _showStatusConfirmDialog(uuuid, currentStatus, nextStatus, btnText),
     );
   }
 }

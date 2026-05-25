@@ -19,6 +19,7 @@ dependencies:
   desktop_drop: ^0.7.1
   syncfusion_flutter_pdfviewer: ^33.2.7
   cross_file: ^0.3.5+2
+  fl_chart: ^1.2.0
 
 dev_dependencies:
 

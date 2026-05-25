@@ -1,47 +1,17 @@
 import 'dart:io';
-// debugPrint 已由 flutter/material.dart 提供，无需单独导入 foundation
 import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import 'config.dart';
 import 'expense_flow_page.dart';
 import 'invoice_manager_page.dart';
-
-// 🧙‍♂️ 专属清道夫：扫描并强杀占用 8000 端口的进程
-Future<void> _clearPort8000() async {
-  if (!Platform.isWindows) return;
-  
-  try {
-    // 1. 调用 Windows 底层 netstat 命令查找 8000 端口
-    final result = await Process.run('cmd', ['/c', 'netstat -ano | findstr :8000']);
-    final lines = result.stdout.toString().split('\n');
-    
-    for (var line in lines) {
-      if (line.contains('LISTENING')) {
-        // 2. 提取出进程的 PID
-        final parts = line.trim().split(RegExp(r'\s+'));
-        if (parts.isNotEmpty) {
-          final pid = parts.last;
-          if (pid != '0') {
-            // 3. 调用 taskkill 强制击杀该 PID
-            await Process.run('taskkill', ['/F', '/PID', pid]);
-            debugPrint('🔫 已自动清扫占用 8000 端口的幽灵进程 (PID: $pid)');
-          }
-        }
-      }
-    }
-  } catch (e) {
-    debugPrint('清理端口时发生错误: $e');
-  }
-}
+import 'dashboard_page.dart';
 
 void main() async {
   // 必须确保 Flutter 绑定初始化，才能与原生窗口通信
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 👉 核心改动：在一切开始之前，先执行清场魔法！
-  await _clearPort8000();
-  
   // 初始化 window_manager
   await windowManager.ensureInitialized();
 
@@ -95,6 +65,7 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
 
   // Python 进程状态
   Process? _pythonProcess;
+  int? _pythonPid;  // 记录 PID，用于窗口关闭时精确清理
   bool _isBackendReady = false;
   String _backendStatus = "正在启动后端服务...";
 
@@ -132,9 +103,10 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
         runInShell: false, 
       );
 
+      _pythonPid = _pythonProcess!.pid;
       setState(() {
         _isBackendReady = true;
-        _backendStatus = "后端服务已成功启动 (PID: ${_pythonProcess?.pid})";
+        _backendStatus = "后端服务已成功启动 (PID: $_pythonPid)";
       });
 
       // 监听 Python 进程的标准输出，强制 UTF-8 解码避免乱码
@@ -155,17 +127,21 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
     }
   }
 
-  /// 核心逻辑：拦截窗口关闭事件并清理孤儿进程
+  /// 核心逻辑：拦截窗口关闭事件并精确清理孤儿进程
   @override
   void onWindowClose() async {
     debugPrint("捕获到窗口关闭事件，准备清理环境...");
-    
-    if (_pythonProcess != null) {
-      // 强制杀死 Python 进程
-      bool killed = _pythonProcess!.kill(ProcessSignal.sigterm);
-      debugPrint("Python 进程 (PID: ${_pythonProcess!.pid}) 是否被成功终止: $killed");
+
+    if (_pythonPid != null) {
+      if (Platform.isWindows) {
+        // Windows: 通过记录的 PID 精确杀进程树，不误伤其他服务
+        await Process.run('taskkill', ['/PID', _pythonPid.toString(), '/T', '/F']);
+        debugPrint("已通过 taskkill 终止 Python 进程树 (PID: $_pythonPid)");
+      } else {
+        _pythonProcess?.kill(ProcessSignal.sigterm);
+      }
     }
-    
+
     // 销毁窗口并退出应用
     await windowManager.destroy();
   }
@@ -174,27 +150,7 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
   Widget build(BuildContext context) {
     // 动态构建右侧页面，以便将后端的连接状态传递给仪表盘显示
     final List<Widget> pages = [
-      // 页面 0: 全局看板
-      Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _isBackendReady ? Icons.check_circle : Icons.warning,
-              color: _isBackendReady ? Colors.green : Colors.orange,
-              size: 64,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _backendStatus,
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 48),
-            const Text('全局看板 (Dashboard) - 待开发', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-      
+      const DashboardPage(),  // 页面 0: 全局看板
       const ExpenseFlowPage(),  // 页面 1: 业务流水
       const InvoiceManagerPage(),  // 页面 2: 发票管理
     ];

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app.database import get_db
 from app import schemas, crud  # 🔥 引入新抽离的 crud 模块
@@ -19,11 +19,23 @@ def create_expense(expense: schemas.ExpenseCreate, db: Session = Depends(get_db)
         db.rollback()  # 发生非业务异常时安全回滚
         raise HTTPException(status_code=500, detail=f"服务器内部错误，创建失败: {str(e)}")
 
-# 2. 获取开销列表
+# 2. 获取开销列表（支持搜索、状态、日期范围筛选）
 @router.get("/", response_model=List[schemas.ExpenseResponse])
-def get_expenses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_expenses(
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = Query(None, description="按事由模糊搜索"),
+    status: Optional[str] = Query(None, description="按状态筛选：待开票/已开票/待报销/核销中/已完结"),
+    date_from: Optional[str] = Query(None, description="发生日期起始 (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="发生日期截止 (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+):
     try:
-        return crud.get_expenses(db=db, skip=skip, limit=limit)
+        return crud.get_expenses(
+            db=db, skip=skip, limit=limit,
+            search=search, status=status,
+            date_from=date_from, date_to=date_to,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"数据查询失败: {str(e)}")
 
@@ -35,6 +47,8 @@ def update_expense(uuuid: str, expense_update: schemas.ExpenseUpdate, db: Sessio
         if not db_expense:
             raise HTTPException(status_code=404, detail="未找到该笔开销记录")
         return db_expense
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
     except HTTPException as he:
         raise he
     except Exception as e:

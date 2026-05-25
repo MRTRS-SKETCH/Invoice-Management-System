@@ -103,3 +103,12 @@ def get_expense_invoices(expense_uuuid: str, db: Session = Depends(get_db)):
             "saved_path": abs_path
         })
     return result
+
+
+@router.delete("/{uuuid}")
+def unbind_invoice(uuuid: str, db: Session = Depends(get_db)):
+    """解绑并删除单张发票（同时清理物理 PDF 文件）"""
+    success = crud.delete_invoice(db=db, uuuid=uuuid)
+    if not success:
+        raise HTTPException(status_code=404, detail="未找到该发票记录")
+    return {"status": "success", "message": "发票已解绑并删除", "uuuid": uuuid}

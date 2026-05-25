@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import date
 
 
@@ -64,3 +64,20 @@ class InvoiceResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+# 顶层统计卡片
+class DashboardSummary(BaseModel):
+    total_amount: float     # 累计报销总额
+    pending_amount: float   # 待处理/待开票总额
+    invoice_count: int      # 绑定的发票总张数
+
+# 趋势图数据项
+class TrendItem(BaseModel):
+    month: str              # 格式: "2026-05"
+    amount: float           # 当月报销总额
+
+# 分布图数据项
+class DistributionItem(BaseModel):
+    category: str           # 类目名称 (如: 差旅, 餐饮, 采购)
+    amount: float           # 该类目总额
+    percentage: float       # 占比 (0.0 ~ 1.0)
