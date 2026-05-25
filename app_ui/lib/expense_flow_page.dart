@@ -120,7 +120,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: AlertDialog(
-            backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.8),
+            backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
             elevation: 0,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('新增业务流水'),
@@ -176,7 +176,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: AlertDialog(
-            backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.8),
+            backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
             elevation: 0,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('删除确认'),
@@ -244,9 +244,9 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
                 filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.4),
+                    color: Colors.white.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 1.5),
                   ),
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
@@ -296,7 +296,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.2),
+                  color: statusColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(status, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12)),

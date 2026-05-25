@@ -87,7 +87,7 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
         }
       }
     } catch (e) {
-      print("获取历史发票失败: $e");
+      debugPrint("获取历史发票失败: $e");
     }
   }
 
@@ -113,12 +113,12 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
             flex: 3,
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.6),
+                color: Colors.white.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.4)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                   )
                 ],
@@ -139,12 +139,12 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
                         ? const Center(child: CircularProgressIndicator())
                         : ListView.separated(
                             itemCount: _expenses.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            separatorBuilder: (_, _) => const Divider(height: 1),
                             itemBuilder: (context, index) {
                               final exp = _expenses[index];
                               final isSelected = exp['uuuid'] == _selectedExpenseId;
                               return ListTile(
-                                tileColor: isSelected ? Colors.blue.withOpacity(0.1) : null,
+                                tileColor: isSelected ? Colors.blue.withValues(alpha: 0.1) : null,
                                 title: Text(exp['title'] ?? '未知记录', 
                                     style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
                                 subtitle: Text('发生日期: ${exp['incurred_date']} | 金额: ¥${exp['amount']}'),
@@ -194,15 +194,15 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
               child: Container(
                 decoration: BoxDecoration(
                   color: _isDragging 
-                      ? Colors.blue.withOpacity(0.2) // 拖拽悬浮时的呼吸反馈
-                      : Colors.white.withOpacity(0.6),
+                      ? Colors.blue.withValues(alpha: 0.2) // 拖拽悬浮时的呼吸反馈
+                      : Colors.white.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: _isDragging ? Colors.blue : Colors.white.withOpacity(0.4),
+                    color: _isDragging ? Colors.blue : Colors.white.withValues(alpha: 0.4),
                     width: _isDragging ? 3 : 1,
                   ),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)
                   ],
                 ),
                 // 动态显示：如果有 PDF 路径则直接渲染内嵌视图，否则显示拖拽提示

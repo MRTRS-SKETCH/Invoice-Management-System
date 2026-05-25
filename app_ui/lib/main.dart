@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';  // 搞清理进程时加的，关于 debugPrint
+// debugPrint 已由 flutter/material.dart 提供，无需单独导入 foundation
 import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
@@ -238,7 +238,7 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
           Expanded(
             child: Container(
               // 给背景加一点极浅的灰色，区分导航栏和内容区
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
               child: pages[_selectedIndex],
             ),
           ),
