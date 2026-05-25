@@ -115,9 +115,9 @@ class _DashboardPageState extends State<DashboardPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.6), // 毛玻璃底色
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.3)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)],
       ),
       child: Column(
@@ -137,12 +137,12 @@ class _DashboardPageState extends State<DashboardPage> {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [color.withOpacity(0.7), color.withOpacity(0.4)],
+          colors: [color.withValues(alpha: 0.7), color.withValues(alpha: 0.4)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: color.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,7 +171,7 @@ class _DashboardPageState extends State<DashboardPage> {
               getTitlesWidget: (double value, TitleMeta meta) {
                 if (value.toInt() >= _trend.length) return const SizedBox();
                 // 截取月份显示, 如 '2026-05' -> '05月'
-                String monthStr = _trend[value.toInt()]['month'].toString().substring(5) + '月';
+                String monthStr = '${_trend[value.toInt()]['month'].toString().substring(5)}月';
                 return Padding(padding: const EdgeInsets.only(top: 8), child: Text(monthStr, style: const TextStyle(fontSize: 10)));
               },
             ),

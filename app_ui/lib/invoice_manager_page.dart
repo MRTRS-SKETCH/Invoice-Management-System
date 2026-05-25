@@ -22,7 +22,7 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
   bool _isDragging = false;
   bool _isLoading = false;
 
-  String get _previewPdfPath {
+  String? get _previewPdfPath {
     if (_invoices.isNotEmpty && _selectedInvoiceIndex < _invoices.length) {
       return _invoices[_selectedInvoiceIndex]['saved_path'] as String?;
     }

@@ -266,7 +266,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
           SizedBox(
             width: 150,
             child: DropdownButtonFormField<String?>(
-              value: _statusFilter,
+              initialValue: _statusFilter,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),

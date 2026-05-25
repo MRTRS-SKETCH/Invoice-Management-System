@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
-import 'config.dart';
 import 'expense_flow_page.dart';
 import 'invoice_manager_page.dart';
 import 'dashboard_page.dart';
@@ -66,8 +65,6 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
   // Python 进程状态
   Process? _pythonProcess;
   int? _pythonPid;  // 记录 PID，用于窗口关闭时精确清理
-  bool _isBackendReady = false;
-  String _backendStatus = "正在启动后端服务...";
 
   @override
   void initState() {
@@ -104,10 +101,7 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
       );
 
       _pythonPid = _pythonProcess!.pid;
-      setState(() {
-        _isBackendReady = true;
-        _backendStatus = "后端服务已成功启动 (PID: $_pythonPid)";
-      });
+      debugPrint("后端服务已成功启动 (PID: $_pythonPid)");
 
       // 监听 Python 进程的标准输出，强制 UTF-8 解码避免乱码
       _pythonProcess?.stdout.listen((event) {
@@ -119,10 +113,6 @@ class _MainLayoutState extends State<MainLayout> with WindowListener {
       });
 
     } catch (e) {
-      setState(() {
-        _isBackendReady = false;
-        _backendStatus = "启动后端服务失败: $e";
-      });
       debugPrint("进程启动异常: $e");
     }
   }
