@@ -23,7 +23,8 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
   bool _isLoading = false;
 
   String? get _previewPdfPath {
-    if (_invoices.isNotEmpty && _selectedInvoiceIndex < _invoices.length) {
+    // 加入 >= 0 的安全校验，防止索引为 -1 时数组越界报错
+    if (_invoices.isNotEmpty && _selectedInvoiceIndex >= 0 && _selectedInvoiceIndex < _invoices.length) {
       return _invoices[_selectedInvoiceIndex]['saved_path'] as String?;
     }
     return null;
@@ -99,12 +100,21 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
 
   // 解绑单张发票
   Future<void> _deleteInvoice(String invoiceUuid) async {
+    // 强制销毁右侧的 PDF 预览组件，释放 Windows 底部文件锁
+    setState(() {
+      _selectedInvoiceIndex = -1; 
+    });
+
+    // 2. 稍微等待 150 毫秒，确保 Flutter 的渲染树完成卸载并彻底释放了文件占用
+    await Future.delayed(const Duration(milliseconds: 150));
+
+    // 3. 安全地请求后端进行物理删除
     try {
       final response = await http.delete(
         Uri.parse('${AppConfig.baseUrl}/api/invoices/$invoiceUuid'),
       );
       if (response.statusCode == 200) {
-        _showSnackBar('发票已解绑并删除');
+        _showSnackBar('发票已解绑并成功删除');
         // 重新拉取发票列表
         if (_selectedExpenseId != null) {
           _fetchBoundInvoices(_selectedExpenseId!);
