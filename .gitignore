@@ -7,8 +7,10 @@
 *.sqlite3
 invoice_system.db
 data/
+user_data/
 REASONIX.md
 build_out/
+Releases/
 
 # 安全凭证与密钥
 .env

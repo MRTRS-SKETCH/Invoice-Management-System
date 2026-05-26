@@ -7,6 +7,7 @@ import 'expense_flow_page.dart';
 import 'invoice_manager_page.dart';
 import 'dashboard_page.dart';
 import 'package:flutter/foundation.dart';
+import 'logger.dart';
 
 // 1. 全局持有后端二进制文件的进程句柄
 Process? _backendProcess;
@@ -14,6 +15,9 @@ Process? _backendProcess;
 void main() async {
   // 必须确保 Flutter 绑定初始化，才能与原生系统通信
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化日志系统并输出日志文件路径
+  AppLogger.info('Flutter 客户端启动 | 日志路径: ${AppLogger.logFilePath}');
 
   // 初始化 window_manager
   await windowManager.ensureInitialized();
@@ -52,12 +56,13 @@ Future<void> _startBackendEngine() async {
   // 智能判断：当前是否处于 Debug 开发模式？
   if (kDebugMode) {
     // 【开发模式】：使用你原来的 Conda/venv 环境直接跑 main.py
-    debugPrint('【Sidecar】🐛 开发模式：正在使用本地 Python 环境热启动...');
-    exePath = r'E:\flutter\Invoice-Management-System\core_api\venv\Scripts\python.exe';
-    processArgs = [r'E:\flutter\Invoice-Management-System\core_api\main.py'];
+    AppLogger.info('【Sidecar】开发模式：正在使用本地 Python 环境热启动...');
+    exePath = r'C:/Users/ninpa/miniconda3/envs/Invoice-Management-System/python.exe';
+    final currentDir = Directory.current.path;
+    processArgs = [p.normalize(p.join(currentDir, '..', 'core_api', 'main.py'))];
   } else {
     // 【生产模式】：当你执行 flutter build windows 打包正式版时，会自动走到这里
-    debugPrint('【Sidecar】🚀 生产模式：正在拉起 Nuitka 独立免安装引擎...');
+    AppLogger.info('【Sidecar】生产模式：正在拉起 Nuitka 独立免安装引擎...');
     String currentDir = p.dirname(Platform.resolvedExecutable);
     exePath = p.join(currentDir, 'api_server', 'main.exe');
     processArgs = [];
@@ -68,20 +73,20 @@ Future<void> _startBackendEngine() async {
     
     // 管道监听：把后端的输出重定向到 Flutter 控制台
     _backendProcess!.stdout.transform(utf8.decoder).listen((data) {
-      debugPrint('【后端】: $data');
+      AppLogger.info('【后端stdout】${data.trim()}');
     });
     _backendProcess!.stderr.transform(utf8.decoder).listen((data) {
-      debugPrint('【后端错误】: $data');
+      AppLogger.error('【后端stderr】${data.trim()}');
     });
   } catch (e) {
-    debugPrint('❌ 后端引擎启动严重失败: $e');
+    AppLogger.error('后端引擎启动严重失败', e);
   }
 }
 
 // 开局清道夫：强杀本地可能残留的同名进程
 Future<void> _cleanGhostProcess() async {
   try {
-    debugPrint('【清道夫】正在检查并清理残留的后端进程...');
+    AppLogger.info('【清道夫】正在检查并清理残留的后端进程...');
     // 强杀所有叫 main.exe 的进程树
     await Process.run('taskkill', ['/F', '/IM', 'main.exe', '/T']);
   } catch (e) {
@@ -93,11 +98,11 @@ Future<void> _cleanGhostProcess() async {
 class _WindowCloseListener extends WindowListener {
   @override
   void onWindowClose() async {
-    debugPrint('【宿主销毁】检测到 Flutter 窗口关闭，正在释放本地服务...');
+    AppLogger.info('【宿主销毁】检测到 Flutter 窗口关闭，正在释放本地服务...');
     
     if (_backendProcess != null) {
       bool isKilled = _backendProcess!.kill();
-      debugPrint('【Sidecar】免安装后端引擎 (PID: ${_backendProcess!.pid}) 销毁状态: $isKilled');
+      AppLogger.info('【Sidecar】免安装后端引擎 (PID: ${_backendProcess!.pid}) 销毁状态: $isKilled');
     }
     
     // 确保释放完毕后再完全撤销窗口

@@ -1,8 +1,11 @@
 import os
+import logging
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from app import models, schemas
+
+logger = logging.getLogger("core_api.crud")
 
 # ── 状态流转白名单 ──
 VALID_TRANSITIONS = {
@@ -29,6 +32,10 @@ def get_expenses(
     date_to: str | None = None,
 ):
     """获取开销列表（按发生日期倒序排列），支持搜索、状态、日期范围筛选"""
+    logger.info(
+        "查询开销列表 | skip=%d limit=%d | search=%s status=%s date_from=%s date_to=%s",
+        skip, limit, search, status, date_from, date_to,
+    )
     q = db.query(models.ExpenseRecord)
 
     if search:
@@ -52,6 +59,10 @@ def create_expense(db: Session, expense: schemas.ExpenseCreate):
     db.add(db_expense)
     db.commit()
     db.refresh(db_expense)
+    logger.info(
+        "创建开销记录 | uuuid=%s title=%s amount=%.2f status=%s",
+        db_expense.uuuid, db_expense.title, db_expense.amount, db_expense.status,
+    )
     return db_expense
 
 
@@ -70,6 +81,10 @@ def update_expense(db: Session, uuuid: str, expense_update: schemas.ExpenseUpdat
         current_status = db_expense.status
         allowed = VALID_TRANSITIONS.get(current_status, [])
         if new_status not in allowed:
+            logger.warning(
+                "非法状态流转被拒绝 | uuuid=%s 当前=%s → 请求=%s 允许=%s",
+                uuuid, current_status, new_status, allowed,
+            )
             raise ValueError(
                 f"非法的状态流转：不允许从「{current_status}」直接跳转到「{new_status}」。"
                 f"允许的下一状态：{allowed if allowed else '无（已是终态）'}"
@@ -80,6 +95,11 @@ def update_expense(db: Session, uuuid: str, expense_update: schemas.ExpenseUpdat
 
     db.commit()
     db.refresh(db_expense)
+    status_change = (
+        f"状态: {current_status} → {new_status}"
+        if "status" in update_data else "状态无变化"
+    )
+    logger.info("更新开销记录 | uuuid=%s | %s", uuuid, status_change)
     return db_expense
 
 
@@ -96,18 +116,24 @@ def delete_expense(db: Session, uuuid: str) -> bool:
     base_dir = Path(__file__).resolve().parent.parent  # core_api/
 
     # 3. 逐条删除发票：先删物理文件，再删数据库记录
+    deleted_pdfs = 0
     for inv in invoices:
         pdf_path = base_dir / inv.saved_path
         try:
             if pdf_path.exists() and pdf_path.is_file():
                 os.remove(pdf_path)
-        except OSError:
-            pass  # 文件不存在或无法删除时静默跳过，不阻断数据库清理
+                deleted_pdfs += 1
+        except OSError as e:
+            logger.exception("删除物理PDF失败 | path=%s", pdf_path)
         db.delete(inv)
 
     # 4. 删除开销记录本身
     db.delete(db_expense)
     db.commit()
+    logger.info(
+        "删除开销记录 | uuuid=%s title=%s | 级联清理发票=%d条 PDF=%d个",
+        uuuid, db_expense.title, len(invoices), deleted_pdfs,
+    )
     return True
 
 def create_invoice(db: Session, expense_uuuid: str, file_name: str, saved_path: str):
@@ -120,6 +146,10 @@ def create_invoice(db: Session, expense_uuuid: str, file_name: str, saved_path: 
     db.add(db_invoice)
     db.commit()
     db.refresh(db_invoice)
+    logger.info(
+        "绑定发票 | uuuid=%s expense_uuuid=%s file_name=%s",
+        db_invoice.uuuid, expense_uuuid, file_name,
+    )
     return db_invoice
 
 def get_invoice_by_uuuid(db: Session, uuuid: str):
@@ -136,6 +166,7 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
     """删除单条发票记录及其物理 PDF 文件"""
     db_invoice = get_invoice_by_uuuid(db, uuuid)
     if not db_invoice:
+        logger.warning("尝试删除不存在的发票 | uuuid=%s", uuuid)
         return False
 
     base_dir = Path(__file__).resolve().parent.parent
@@ -143,15 +174,19 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
     try:
         if pdf_path.exists() and pdf_path.is_file():
             os.remove(pdf_path)
-    except OSError:
-        pass
+            logger.info("删除发票PDF文件 | path=%s", pdf_path)
+    except OSError as e:
+        logger.exception("删除物理PDF失败 | path=%s", pdf_path)
 
     db.delete(db_invoice)
     db.commit()
+    logger.info("删除发票记录 | uuuid=%s expense_uuuid=%s file_name=%s", uuuid, db_invoice.expense_uuuid, db_invoice.file_name)
     return True
 
 
 def get_dashboard_summary(db: Session) -> dict:
+    """看板汇总统计"""
+    logger.info("查询看板汇总")
     # 1. 累计报销总额
     total_amount = db.query(func.sum(models.ExpenseRecord.amount)).scalar() or 0.0
 

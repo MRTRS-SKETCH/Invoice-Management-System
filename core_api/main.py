@@ -9,26 +9,27 @@ from app.database import engine
 from app import models
 from app.routers import expenses, invoices, dashboard
 
-# ── 日志配置 ──
-LOG_DIR = Path(__file__).resolve().parent / "data"
+# ── 日志配置（按年月命名，仅输出到文件，不输出到控制台）──
+LOG_DIR = Path(__file__).resolve().parent / "user_data"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / "app.log"
+LOG_FILE = LOG_DIR / f"{__import__('datetime').datetime.now().strftime('%Y-%m')}.log"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     handlers=[
         logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(),
     ],
 )
 logger = logging.getLogger("core_api")
 
 # 启动时建表
 models.Base.metadata.create_all(bind=engine)
+logger.info("数据库表结构已确认/创建")
 
 # 初始化总应用
 app = FastAPI(title="对公报销与发票管理系统 API", version="1.0.0")
+logger.info("FastAPI 应用实例已创建")
 
 # ── CORS 中间件 ──
 app.add_middleware(
@@ -48,8 +49,10 @@ def redirect_to_docs():
 app.include_router(expenses.router)
 app.include_router(invoices.router)
 app.include_router(dashboard.router)
+logger.info("业务路由已挂载：/api/expenses  /api/invoices  /api/dashboard")
 
 if __name__ == "__main__":
     # 作为唯一的启动入口
+    logger.info("API 服务启动中 — 监听 127.0.0.1:8000")
     from uvicorn import run
     run(app, host="127.0.0.1", port=8000)

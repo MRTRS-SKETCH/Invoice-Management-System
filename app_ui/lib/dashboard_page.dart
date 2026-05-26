@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:fl_chart/fl_chart.dart';
 import 'config.dart';
+import 'logger.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -48,7 +49,7 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       }
     } catch (e) {
-      debugPrint("获取看板数据失败: $e");
+      AppLogger.error("获取看板数据失败", e);
       setState(() => _isLoading = false);
     }
   }

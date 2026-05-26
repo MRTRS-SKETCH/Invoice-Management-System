@@ -4,7 +4,7 @@ from pathlib import Path
 
 # 获取项目根目录的绝对路径 (即 core_api 目录)
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = BASE_DIR / "user_data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # 拼接出数据库的绝对路径

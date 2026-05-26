@@ -6,6 +6,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'config.dart';
+import 'logger.dart';
 
 class InvoiceManagerPage extends StatefulWidget {
   const InvoiceManagerPage({super.key});
@@ -94,7 +95,7 @@ class _InvoiceManagerPageState extends State<InvoiceManagerPage> {
         });
       }
     } catch (e) {
-      debugPrint("获取历史发票失败: $e");
+      AppLogger.error("获取历史发票失败", e);
     }
   }
 

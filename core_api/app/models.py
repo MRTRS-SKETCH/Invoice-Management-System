@@ -46,7 +46,7 @@ class InvoiceRecord(Base):
 
     # 文件物理信息
     file_name = Column(String, nullable=False)  # 原始文件名（例如：滴滴出行发票.pdf）
-    saved_path = Column(String, nullable=False)  # 系统内的相对保存路径（例如：data/pdfs/xxx.pdf）
+    saved_path = Column(String, nullable=False)  # 系统内的相对保存路径（例如：user_data/pdfs/xxx.pdf）
 
     # 绑定时间
     created_at = Column(DateTime, default=func.now())
