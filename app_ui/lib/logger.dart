@@ -1,82 +1,39 @@
-import 'dart:io';
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'config.dart';
 
-/// 应用级文件日志工具 — 与 Python 后端共用日志目录，按月命名，同步写入，持久留痕。
+/// 前端日志单例 — 内存缓冲 + 批量上报，不阻塞 UI 线程。
 ///
-/// 日志文件路径：`core_api/user_data/flutter_YYYY-MM.log`（与 Python 后端同目录）
+/// - 日志先入内存队列，达到 50 条或每 2 秒自动批量 POST 到后端
+/// - 发送为 fire-and-forget，后端不可达时静默丢弃，绝不抛异常或红屏
 ///
-/// 调用方式：
+/// 用法：
 /// ```dart
 /// AppLogger.info('后端引擎启动成功');
 /// AppLogger.error('网络请求失败', error);
 /// AppLogger.warning('残留进程已清理');
 /// ```
 class AppLogger {
-  static String? _logDirPath;
-  static String? _currentLogPath;
+  AppLogger._();
 
-  /// 获取当前日志文件的完整路径（方便用户定位）
-  static String get logFilePath {
-    _ensureLogDirSync();
-    return _currentLogPath!;
+  static final List<Map<String, String>> _buffer = [];
+  static Timer? _timer;
+  static bool _flushing = false;
+
+  /// 初始化定时器（首次调用 info/warning/error 时自动触发）
+  static void _ensureTimer() {
+    if (_timer != null) return;
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _flush());
   }
 
-  /// 初始化日志目录（同步，首次调用时自动创建）
-  static void _ensureLogDirSync() {
-    if (_logDirPath != null) return;
+  // ── 公开便捷方法 ──
 
-    // 与 Python 后端共用日志目录：{项目根}/core_api/user_data/
-    final currentDir = Directory.current.path;
-    final logDir = Directory('$currentDir\\..\\core_api\\user_data');
-    if (!logDir.existsSync()) {
-      logDir.createSync(recursive: true);
-    }
-    _logDirPath = logDir.absolute.path;
+  static void info(String message) => _enqueue('INFO', message);
 
-    // Flutter 日志以 flutter_ 前缀区分，与 Python 的 YYYY-MM.log 放在同一目录
-    final now = DateTime.now();
-    final monthStr = '${now.year}-${now.month.toString().padLeft(2, '0')}';
-    _currentLogPath = '${logDir.absolute.path}\\flutter_$monthStr.log';
-  }
+  static void warning(String message) => _enqueue('WARNING', message);
 
-  /// 写入一条日志（同步，确保立即落盘）
-  static void _write(String level, String message, [Object? error]) {
-    try {
-      _ensureLogDirSync();
-
-      final now = DateTime.now();
-      final timestamp =
-          '${now.year}-${_pad(now.month)}-${_pad(now.day)} '
-          '${_pad(now.hour)}:${_pad(now.minute)}:${_pad(now.second)}'
-          '.${now.millisecond.toString().padLeft(3, '0')}';
-
-      // 清洗消息中的换行符，避免日志出现莫名空行
-      final cleaned = message.replaceAll('\r\n', ' ').replaceAll('\n', ' ').trim();
-      var line = '$timestamp [$level] - $cleaned';
-      if (error != null) {
-        line += ' | ${error.toString().replaceAll('\n', ' ')}';
-      }
-
-      // 1. 同步写入本地日志文件（持久留痕，立即落盘）
-      final logFile = File(_currentLogPath!);
-      logFile.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
-
-      // 2. 开发模式下同步输出到控制台
-      if (kDebugMode) {
-        debugPrint('[$level] $message');
-      }
-    } catch (_) {
-      // 日志写入失败不应阻断业务逻辑
-      if (kDebugMode) {
-        debugPrint('⚠️ 日志写入失败: $message');
-      }
-    }
-  }
-
-  /// 普通信息日志
-  static void info(String message) => _write('INFO', message);
-
-  /// 错误日志（自动附带异常信息）
   static void error(String message, [Object? error, StackTrace? stack]) {
     final sb = StringBuffer(message);
     if (error != null) {
@@ -85,11 +42,50 @@ class AppLogger {
     if (stack != null) {
       sb.write(' | 堆栈: $stack');
     }
-    _write('ERROR', sb.toString());
+    _enqueue('ERROR', sb.toString());
   }
 
-  /// 警告日志
-  static void warning(String message) => _write('WARNING', message);
+  // ── 内部逻辑 ──
 
-  static String _pad(int n) => n.toString().padLeft(2, '0');
+  /// 入队一条日志
+  static void _enqueue(String level, String message) {
+    _ensureTimer();
+    _buffer.add({'level': level, 'message': message});
+
+    // 开发模式下同步输出到控制台（方便调试）
+    if (kDebugMode) {
+      debugPrint('[$level] $message');
+    }
+
+    // 缓冲达到阈值 → 立即触发发送
+    if (_buffer.length >= 50) {
+      _flush();
+    }
+  }
+
+  /// 批量上报（fire-and-forget，不阻塞，不抛异常）
+  static void _flush() {
+    if (_buffer.isEmpty || _flushing) return;
+    _flushing = true;
+
+    // 取出当前缓冲并清空（后续日志进入新批次）
+    final batch = List<Map<String, String>>.from(_buffer);
+    _buffer.clear();
+
+    http
+        .post(
+          Uri.parse('${AppConfig.baseUrl}/api/client-logs/batch'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(batch),
+        )
+        .then((_) {
+          // 发送成功 — 日志已安全抵达后端
+        })
+        .catchError((_) {
+          // 后端不可达 — 静默丢弃（需求规定不可抛异常/红屏）
+        })
+        .whenComplete(() {
+          _flushing = false;
+        });
+  }
 }

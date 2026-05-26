@@ -1,27 +1,15 @@
-import logging
-from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from loguru import logger
 
-# 使用绝对路径从 app 包中导入所需模块
 from app.database import engine
 from app import models
-from app.routers import expenses, invoices, dashboard
+from app.logger_config import setup_loguru
+from app.routers import expenses, invoices, dashboard, client_logs
 
-# ── 日志配置（按年月命名，仅输出到文件，不输出到控制台）──
-LOG_DIR = Path(__file__).resolve().parent / "user_data"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / f"{__import__('datetime').datetime.now().strftime('%Y-%m')}.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-    ],
-)
-logger = logging.getLogger("core_api")
+# ── 初始化 Loguru 日志系统（替代原生 logging）──
+setup_loguru()
 
 # 启动时建表
 models.Base.metadata.create_all(bind=engine)
@@ -49,10 +37,10 @@ def redirect_to_docs():
 app.include_router(expenses.router)
 app.include_router(invoices.router)
 app.include_router(dashboard.router)
-logger.info("业务路由已挂载：/api/expenses  /api/invoices  /api/dashboard")
+app.include_router(client_logs.router)
+logger.info("业务路由已挂载：/api/expenses  /api/invoices  /api/dashboard  /api/client-logs")
 
 if __name__ == "__main__":
-    # 作为唯一的启动入口
     logger.info("API 服务启动中 — 监听 127.0.0.1:8000")
     from uvicorn import run
     run(app, host="127.0.0.1", port=8000)

@@ -16,8 +16,8 @@ void main() async {
   // 必须确保 Flutter 绑定初始化，才能与原生系统通信
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 初始化日志系统并输出日志文件路径
-  AppLogger.info('Flutter 客户端启动 | 日志路径: ${AppLogger.logFilePath}');
+  // 初始化日志系统（缓冲队列自动启动，批量上报到后端统一日志）
+  AppLogger.info('Flutter 客户端启动');
 
   // 初始化 window_manager
   await windowManager.ensureInitialized();
@@ -52,6 +52,7 @@ void main() async {
 Future<void> _startBackendEngine() async {
   String exePath;
   List<String> processArgs;
+  String? workingDir;
 
   // 智能判断：当前是否处于 Debug 开发模式？
   if (kDebugMode) {
@@ -59,24 +60,47 @@ Future<void> _startBackendEngine() async {
     AppLogger.info('【Sidecar】开发模式：正在使用本地 Python 环境热启动...');
     exePath = r'C:/Users/ninpa/miniconda3/envs/Invoice-Management-System/python.exe';
     final currentDir = Directory.current.path;
-    processArgs = [p.normalize(p.join(currentDir, '..', 'core_api', 'main.py'))];
+    // -X utf8: 强制 Python 以 UTF-8 模式运行，避免 Windows GBK 编码干扰
+    // -u: 无缓冲 stdout/stderr，保证实时输出
+    processArgs = [
+      '-X', 'utf8',
+      '-u',
+      p.normalize(p.join(currentDir, '..', 'core_api', 'main.py')),
+    ];
+    workingDir = p.normalize(p.join(currentDir, '..', 'core_api'));
   } else {
     // 【生产模式】：当你执行 flutter build windows 打包正式版时，会自动走到这里
     AppLogger.info('【Sidecar】生产模式：正在拉起 Nuitka 独立免安装引擎...');
     String currentDir = p.dirname(Platform.resolvedExecutable);
     exePath = p.join(currentDir, 'api_server', 'main.exe');
     processArgs = [];
+    workingDir = p.join(currentDir, 'api_server');
   }
 
   try {
-    _backendProcess = await Process.start(exePath, processArgs);
-    
-    // 管道监听：把后端的输出重定向到 Flutter 控制台
-    _backendProcess!.stdout.transform(utf8.decoder).listen((data) {
-      AppLogger.info('【后端stdout】${data.trim()}');
+    _backendProcess = await Process.start(
+      exePath,
+      processArgs,
+      workingDirectory: workingDir,
+      // 强制子进程使用 UTF-8 编码，消除 Windows 控制台 GBK 干扰
+      environment: {
+        'PYTHONIOENCODING': 'utf-8',
+        'PYTHONUTF8': '1',
+      },
+    );
+
+    // 管道监听：allowMalformed 兜底，即使偶有非 UTF-8 字节也不崩
+    _backendProcess!.stdout.listen((bytes) {
+      if (kDebugMode) {
+        final text = utf8.decode(bytes, allowMalformed: true).trim();
+        if (text.isNotEmpty) debugPrint('【后端stdout】$text');
+      }
     });
-    _backendProcess!.stderr.transform(utf8.decoder).listen((data) {
-      AppLogger.error('【后端stderr】${data.trim()}');
+    _backendProcess!.stderr.listen((bytes) {
+      if (kDebugMode) {
+        final text = utf8.decode(bytes, allowMalformed: true).trim();
+        if (text.isNotEmpty) debugPrint('【后端stderr】$text');
+      }
     });
   } catch (e) {
     AppLogger.error('后端引擎启动严重失败', e);
@@ -87,10 +111,25 @@ Future<void> _startBackendEngine() async {
 Future<void> _cleanGhostProcess() async {
   try {
     AppLogger.info('【清道夫】正在检查并清理残留的后端进程...');
-    // 强杀所有叫 main.exe 的进程树
-    await Process.run('taskkill', ['/F', '/IM', 'main.exe', '/T']);
-  } catch (e) {
-    // 如果没有残留，taskkill 会报错，这里直接无视即可
+    // 通过端口 8000 反查占用进程 PID，精准杀除（兼容 python.exe 和 main.exe）
+    final netstat = await Process.run('cmd', [
+      '/c', 'netstat -ano | findstr :8000 | findstr LISTENING'
+    ]);
+    final output = (netstat.stdout as String).trim();
+    if (output.isNotEmpty) {
+      // 解析 PID（netstat 输出最后一列）
+      final lines = output.split('\n');
+      for (final line in lines) {
+        final parts = line.trim().split(RegExp(r'\s+'));
+        if (parts.length >= 5) {
+          final pid = parts.last;
+          await Process.run('taskkill', ['/F', '/PID', pid, '/T']);
+          AppLogger.info('【清道夫】已杀死占用端口 8000 的进程 PID=$pid');
+        }
+      }
+    }
+  } catch (_) {
+    // 无残留或权限不足时静默跳过
   }
 }
 

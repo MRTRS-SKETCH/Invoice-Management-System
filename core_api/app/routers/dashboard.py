@@ -1,12 +1,10 @@
-import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import List
+from loguru import logger
 
 from app.database import get_db
 from app import schemas, crud
-
-logger = logging.getLogger("core_api.routers.dashboard")
 
 router = APIRouter(
     prefix="/api/dashboard",

@@ -1,11 +1,9 @@
 import os
-import logging
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
+from loguru import logger
 from app import models, schemas
-
-logger = logging.getLogger("core_api.crud")
 
 # ── 状态流转白名单 ──
 VALID_TRANSITIONS = {
@@ -33,7 +31,7 @@ def get_expenses(
 ):
     """获取开销列表（按发生日期倒序排列），支持搜索、状态、日期范围筛选"""
     logger.info(
-        "查询开销列表 | skip=%d limit=%d | search=%s status=%s date_from=%s date_to=%s",
+        "查询开销列表 | skip={} limit={} | search={} status={} date_from={} date_to={}",
         skip, limit, search, status, date_from, date_to,
     )
     q = db.query(models.ExpenseRecord)
@@ -60,7 +58,7 @@ def create_expense(db: Session, expense: schemas.ExpenseCreate):
     db.commit()
     db.refresh(db_expense)
     logger.info(
-        "创建开销记录 | uuuid=%s title=%s amount=%.2f status=%s",
+        "创建开销记录 | uuuid={} title={} amount={:.2f} status={}",
         db_expense.uuuid, db_expense.title, db_expense.amount, db_expense.status,
     )
     return db_expense
@@ -82,7 +80,7 @@ def update_expense(db: Session, uuuid: str, expense_update: schemas.ExpenseUpdat
         allowed = VALID_TRANSITIONS.get(current_status, [])
         if new_status not in allowed:
             logger.warning(
-                "非法状态流转被拒绝 | uuuid=%s 当前=%s → 请求=%s 允许=%s",
+                "非法状态流转被拒绝 | uuuid={} 当前={} → 请求={} 允许={}",
                 uuuid, current_status, new_status, allowed,
             )
             raise ValueError(
@@ -99,7 +97,7 @@ def update_expense(db: Session, uuuid: str, expense_update: schemas.ExpenseUpdat
         f"状态: {current_status} → {new_status}"
         if "status" in update_data else "状态无变化"
     )
-    logger.info("更新开销记录 | uuuid=%s | %s", uuuid, status_change)
+    logger.info("更新开销记录 | uuuid={} | {}", uuuid, status_change)
     return db_expense
 
 
@@ -124,14 +122,14 @@ def delete_expense(db: Session, uuuid: str) -> bool:
                 os.remove(pdf_path)
                 deleted_pdfs += 1
         except OSError as e:
-            logger.exception("删除物理PDF失败 | path=%s", pdf_path)
+            logger.opt(exception=True).error("删除物理PDF失败 | path={}", pdf_path)
         db.delete(inv)
 
     # 4. 删除开销记录本身
     db.delete(db_expense)
     db.commit()
     logger.info(
-        "删除开销记录 | uuuid=%s title=%s | 级联清理发票=%d条 PDF=%d个",
+        "删除开销记录 | uuuid={} title={} | 级联清理发票={}条 PDF={}个",
         uuuid, db_expense.title, len(invoices), deleted_pdfs,
     )
     return True
@@ -147,7 +145,7 @@ def create_invoice(db: Session, expense_uuuid: str, file_name: str, saved_path: 
     db.commit()
     db.refresh(db_invoice)
     logger.info(
-        "绑定发票 | uuuid=%s expense_uuuid=%s file_name=%s",
+        "绑定发票 | uuuid={} expense_uuuid={} file_name={}",
         db_invoice.uuuid, expense_uuuid, file_name,
     )
     return db_invoice
@@ -166,7 +164,7 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
     """删除单条发票记录及其物理 PDF 文件"""
     db_invoice = get_invoice_by_uuuid(db, uuuid)
     if not db_invoice:
-        logger.warning("尝试删除不存在的发票 | uuuid=%s", uuuid)
+        logger.warning("尝试删除不存在的发票 | uuuid={}", uuuid)
         return False
 
     base_dir = Path(__file__).resolve().parent.parent
@@ -174,13 +172,13 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
     try:
         if pdf_path.exists() and pdf_path.is_file():
             os.remove(pdf_path)
-            logger.info("删除发票PDF文件 | path=%s", pdf_path)
+            logger.info("删除发票PDF文件 | path={}", pdf_path)
     except OSError as e:
-        logger.exception("删除物理PDF失败 | path=%s", pdf_path)
+        logger.opt(exception=True).error("删除物理PDF失败 | path={}", pdf_path)
 
     db.delete(db_invoice)
     db.commit()
-    logger.info("删除发票记录 | uuuid=%s expense_uuuid=%s file_name=%s", uuuid, db_invoice.expense_uuuid, db_invoice.file_name)
+    logger.info("删除发票记录 | uuuid={} expense_uuuid={} file_name={}", uuuid, db_invoice.expense_uuuid, db_invoice.file_name)
     return True
 
 

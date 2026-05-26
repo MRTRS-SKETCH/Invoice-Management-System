@@ -81,3 +81,9 @@ class DistributionItem(BaseModel):
     category: str           # 类目名称 (如: 差旅, 餐饮, 采购)
     amount: float           # 该类目总额
     percentage: float       # 占比 (0.0 ~ 1.0)
+
+
+# ── 前端日志批量上报 ──
+class ClientLogEntry(BaseModel):
+    level: str = Field(..., description="日志级别：INFO / WARNING / ERROR")
+    message: str = Field(..., description="日志内容")
