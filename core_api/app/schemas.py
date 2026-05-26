@@ -16,6 +16,7 @@ class ExpenseBase(BaseModel):
 
     has_company_invoice: bool = Field(default=False, description="是否有公司发票")
     project_name: Optional[str] = Field(default=None, description="报销项目名称")
+    expense_type: Optional[str] = Field(default=None, description="开销类型（如差旅交通/云服务采购）")
     related_persons: Optional[str] = Field(default=None, description="报销单有关人")
 
 
@@ -35,6 +36,7 @@ class ExpenseUpdate(BaseModel):
     actual_reimbursed_amount: Optional[float] = None
     has_company_invoice: Optional[bool] = None
     project_name: Optional[str] = None
+    expense_type: Optional[str] = None
     related_persons: Optional[str] = None
 
 # 3. 向前端返回数据校验：强行要求携带主键 uuuid
@@ -81,6 +83,12 @@ class DistributionItem(BaseModel):
     category: str           # 类目名称 (如: 差旅, 餐饮, 采购)
     amount: float           # 该类目总额
     percentage: float       # 占比 (0.0 ~ 1.0)
+
+
+# 热力图数据项（近90天每日开销频次）
+class HeatmapItem(BaseModel):
+    date: str               # 格式: "2026-05-20"
+    count: int              # 当日开销记录数
 
 
 # ── 前端日志批量上报 ──

@@ -251,3 +251,47 @@ def get_category_distribution(db: Session) -> list:
         })
 
     return sorted(result, key=lambda x: x["amount"], reverse=True)
+
+
+def get_daily_heatmap(db: Session) -> list:
+    """返回近 90 天每日开销记录数，无数据的日期填 0（用于前端热力图）"""
+    from datetime import datetime, timedelta
+
+    logger.info("查询每日开销频次热力图")
+
+    # 生成近 90 天的日期列表
+    today = datetime.now().date()
+    all_days = [(today - timedelta(days=i)).isoformat() for i in range(89, -1, -1)]
+
+    # 数据库聚合查询：按 incurred_date 分组统计条数
+    query = db.query(
+        func.date(models.ExpenseRecord.incurred_date).label('day'),
+        func.count(models.ExpenseRecord.uuuid).label('cnt')
+    ).group_by('day').all()
+
+    db_map = {row.day: row.cnt for row in query}
+
+    return [{"date": d, "count": db_map.get(d, 0)} for d in all_days]
+
+
+def get_expense_type_distribution(db: Session) -> list:
+    """按 expense_type 分组统计金额与占比（用于环形图）"""
+    logger.info("查询开销类型分布")
+
+    query = db.query(
+        func.coalesce(models.ExpenseRecord.expense_type, "未分类").label('category'),
+        func.sum(models.ExpenseRecord.amount).label('total')
+    ).group_by('category').all()
+
+    total_all = sum(row.total for row in query if row.total) or 1.0
+
+    result = []
+    for row in query:
+        amt = float(row.total or 0.0)
+        result.append({
+            "category": row.category,
+            "amount": amt,
+            "percentage": round(amt / total_all, 4)
+        })
+
+    return sorted(result, key=lambda x: x["amount"], reverse=True)

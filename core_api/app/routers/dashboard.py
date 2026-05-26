@@ -28,3 +28,17 @@ def read_category_distribution(db: Session = Depends(get_db)):
     """获取各项报销项目(Project)金额与占比"""
     logger.info("GET /api/dashboard/distribution")
     return crud.get_category_distribution(db)
+
+
+@router.get("/heatmap", response_model=List[schemas.HeatmapItem])
+def read_daily_heatmap(db: Session = Depends(get_db)):
+    """获取近 90 天每日开销频次热力图数据"""
+    logger.info("GET /api/dashboard/heatmap")
+    return crud.get_daily_heatmap(db)
+
+
+@router.get("/type-distribution", response_model=List[schemas.DistributionItem])
+def read_expense_type_distribution(db: Session = Depends(get_db)):
+    """获取各项开销类型(expense_type)金额与占比"""
+    logger.info("GET /api/dashboard/type-distribution")
+    return crud.get_expense_type_distribution(db)

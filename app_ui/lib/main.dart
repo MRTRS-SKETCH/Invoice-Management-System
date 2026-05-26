@@ -3,9 +3,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
-import 'expense_flow_page.dart';
-import 'invoice_manager_page.dart';
-import 'dashboard_page.dart';
+import 'unified_dashboard_page.dart';
 import 'package:flutter/foundation.dart';
 import 'logger.dart';
 import 'widgets/custom_title_bar.dart';
@@ -175,70 +173,19 @@ class InvoiceSystemApp extends StatelessWidget {
   }
 }
 
-class MainLayout extends StatefulWidget {
+/// 单页驾驶舱布局 — 标题栏 + 全屏融合页面
+class MainLayout extends StatelessWidget {
   const MainLayout({super.key});
 
   @override
-  State<MainLayout> createState() => _MainLayoutState();
-}
-
-class _MainLayoutState extends State<MainLayout> {
-  int _selectedIndex = 0;
-
-  final List<Widget> pages = const [
-    DashboardPage(),
-    ExpenseFlowPage(),
-    InvoiceManagerPage(),
-  ];
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       body: Column(
         children: [
-          const CustomTitleBar(),
-          Expanded(
-            child: Row(
-              children: [
-                NavigationRail(
-            extended: true,
-            minExtendedWidth: 200,
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: (int index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
-            destinations: const [
-              NavigationRailDestination(
-                icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard),
-                label: Text('全局看板'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.receipt_long_outlined),
-                selectedIcon: Icon(Icons.receipt_long),
-                label: Text('业务流水'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.picture_as_pdf_outlined),
-                selectedIcon: Icon(Icons.picture_as_pdf),
-                label: Text('发票管理'),
-              ),
-            ],
-          ),
-          const VerticalDivider(thickness: 1, width: 1),
-              Expanded(
-                child: Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                  child: pages[_selectedIndex],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
+          CustomTitleBar(),
+          Expanded(child: UnifiedDashboardPage()),
+        ],
+      ),
+    );
   }
 }

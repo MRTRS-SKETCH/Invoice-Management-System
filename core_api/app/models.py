@@ -32,6 +32,7 @@ class ExpenseRecord(Base):
     # 拓展业务字段
     has_company_invoice = Column(Boolean, default=False)  # 是否有公司发票
     project_name = Column(String, nullable=True)  # 报销项目名称
+    expense_type = Column(String, nullable=True)   # 开销类型（如"差旅交通""云服务采购"）
     related_persons = Column(String, nullable=True)  # 报销单有关人
 
 
