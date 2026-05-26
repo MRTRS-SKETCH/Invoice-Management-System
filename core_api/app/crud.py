@@ -123,6 +123,7 @@ def delete_expense(db: Session, uuuid: str) -> bool:
                 deleted_pdfs += 1
         except OSError as e:
             logger.opt(exception=True).error("删除物理PDF失败 | path={}", pdf_path)
+            return False  # 文件锁未释放，阻断 DB 删除，防止僵尸记录
         db.delete(inv)
 
     # 4. 删除开销记录本身
@@ -175,6 +176,7 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
             logger.info("删除发票PDF文件 | path={}", pdf_path)
     except OSError as e:
         logger.opt(exception=True).error("删除物理PDF失败 | path={}", pdf_path)
+        return False  # 文件锁未释放，阻断 DB 删除，防止僵尸记录
 
     db.delete(db_invoice)
     db.commit()

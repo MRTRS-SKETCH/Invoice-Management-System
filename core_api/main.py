@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from loguru import logger
 
@@ -19,14 +18,7 @@ logger.info("数据库表结构已确认/创建")
 app = FastAPI(title="对公报销与发票管理系统 API", version="1.0.0")
 logger.info("FastAPI 应用实例已创建")
 
-# ── CORS 中间件 ──
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 本地桌面端无需跨域 —— CORS 中间件已移除
 
 # 将访问者引流到可视化接口面板
 @app.get("/", include_in_schema=False)
@@ -41,6 +33,6 @@ app.include_router(client_logs.router)
 logger.info("业务路由已挂载：/api/expenses  /api/invoices  /api/dashboard  /api/client-logs")
 
 if __name__ == "__main__":
-    logger.info("API 服务启动中 — 监听 127.0.0.1:8000")
+    logger.info("API 服务启动中 — 监听 127.0.0.1:18090")
     from uvicorn import run
-    run(app, host="127.0.0.1", port=8000)
+    run(app, host="127.0.0.1", port=18090)

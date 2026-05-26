@@ -35,6 +35,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     setState(() => _isLoading = true);
     try {
       final params = <String, String>{};
+      params['limit'] = '5000';  // 防止后端默认截断 100 条
       final search = _searchController.text.trim();
       if (search.isNotEmpty) params['search'] = search;
       if (_statusFilter != null) params['status'] = _statusFilter!;
@@ -92,7 +93,11 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
       );
 
       if (response.statusCode == 200) {
-        _fetchExpenses(); // 状态更新成功后刷新表格
+        // 零延迟内存更新：直接修改对应 item 的 status，无需全量刷新
+        setState(() {
+          final idx = _expenses.indexWhere((item) => item['uuuid'] == uuuid);
+          if (idx != -1) _expenses[idx]['status'] = newStatus;
+        });
       } else {
         _showError('状态流转失败: ${response.body}');
       }
@@ -106,7 +111,10 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     try {
       final response = await http.delete(Uri.parse('$_apiUrl$uuuid'));
       if (response.statusCode == 200) {
-        _fetchExpenses(); // 删除成功后刷新表格
+        // 零延迟内存更新：直接从列表中移除，无需全量刷新
+        setState(() {
+          _expenses.removeWhere((item) => item['uuuid'] == uuuid);
+        });
       } else {
         _showError('删除失败: ${response.body}');
       }

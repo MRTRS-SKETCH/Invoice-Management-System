@@ -111,9 +111,9 @@ Future<void> _startBackendEngine() async {
 Future<void> _cleanGhostProcess() async {
   try {
     AppLogger.info('【清道夫】正在检查并清理残留的后端进程...');
-    // 通过端口 8000 反查占用进程 PID，精准杀除（兼容 python.exe 和 main.exe）
+    // 通过端口 18090 反查占用进程 PID，精准杀除（兼容 python.exe 和 main.exe）
     final netstat = await Process.run('cmd', [
-      '/c', 'netstat -ano | findstr :8000 | findstr LISTENING'
+      '/c', 'netstat -ano | findstr :18090 | findstr LISTENING'
     ]);
     final output = (netstat.stdout as String).trim();
     if (output.isNotEmpty) {
@@ -124,7 +124,7 @@ Future<void> _cleanGhostProcess() async {
         if (parts.length >= 5) {
           final pid = parts.last;
           await Process.run('taskkill', ['/F', '/PID', pid, '/T']);
-          AppLogger.info('【清道夫】已杀死占用端口 8000 的进程 PID=$pid');
+          AppLogger.info('【清道夫】已杀死占用端口 18090 的进程 PID=$pid');
         }
       }
     }
