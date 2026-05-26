@@ -8,6 +8,7 @@ import 'invoice_manager_page.dart';
 import 'dashboard_page.dart';
 import 'package:flutter/foundation.dart';
 import 'logger.dart';
+import 'widgets/custom_title_bar.dart';
 
 // 1. 全局持有后端二进制文件的进程句柄
 Process? _backendProcess;
@@ -33,7 +34,7 @@ void main() async {
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
-    titleBarStyle: TitleBarStyle.normal,
+    titleBarStyle: TitleBarStyle.hidden,
     title: '财务与发票管理系统',
   );
   
@@ -162,6 +163,12 @@ class InvoiceSystemApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey),
         useMaterial3: true,
+        fontFamily: 'Microsoft YaHei',
+        scrollbarTheme: ScrollbarThemeData(
+          thickness: WidgetStateProperty.all(8),
+          thumbColor: WidgetStateProperty.all(Colors.blueGrey.withValues(alpha: 0.4)),
+          radius: const Radius.circular(4),
+        ),
       ),
       home: const MainLayout(),
     );
@@ -187,9 +194,13 @@ class _MainLayoutState extends State<MainLayout> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
+      body: Column(
         children: [
-          NavigationRail(
+          const CustomTitleBar(),
+          Expanded(
+            child: Row(
+              children: [
+                NavigationRail(
             extended: true,
             minExtendedWidth: 200,
             selectedIndex: _selectedIndex,
@@ -217,14 +228,17 @@ class _MainLayoutState extends State<MainLayout> {
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
-          Expanded(
-            child: Container(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              child: pages[_selectedIndex],
-            ),
+              Expanded(
+                child: Container(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  child: pages[_selectedIndex],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ),
+      ],
+    ),
+  );
   }
 }

@@ -364,8 +364,11 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24.0),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
+        child: Container(
+          padding: const EdgeInsets.all(24.0),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [Colors.blue.shade50, Colors.purple.shade50],
@@ -386,7 +389,9 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
                   color: Colors.black87,
                 ),
               ),
-              FilledButton.icon(
+              Tooltip(
+                message: '新增一笔业务流水记录',
+                child: FilledButton.icon(
                 onPressed: _showAddDialog,
                 icon: const Icon(Icons.add_card),
                 label: const Text('新增记录'),
@@ -394,6 +399,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
+              ),
               ),
             ],
           ),
@@ -422,6 +428,8 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
           ),
         ],
       ),
+        ),
+      ),
     );
   }
 
@@ -430,7 +438,7 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     return SingleChildScrollView(
       child: DataTable(
         headingTextStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-        dataRowMaxHeight: 60,
+        dataRowMaxHeight: 66,
         columns: const [
           DataColumn(label: Text('事由')),
           DataColumn(label: Text('金额')),
@@ -453,8 +461,13 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
 
           return DataRow(cells: [
             DataCell(Text(title, style: const TextStyle(fontWeight: FontWeight.w500))),
-            DataCell(Text('¥ ${expense['amount']?.toString() ?? '0.00'}', 
-              style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.bold))),
+            DataCell(Text('¥ ${expense['amount']?.toStringAsFixed(2) ?? '0.00'}',
+              style: const TextStyle(
+                fontFamily: 'Roboto Mono',
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.teal,
+              ))),
             DataCell(Text(expense['incurred_date'] ?? '-')),
             DataCell(
               Container(
@@ -527,14 +540,17 @@ class _ExpenseFlowPageState extends State<ExpenseFlowPage> {
     }
 
     // 点击先弹确认窗，防止误操作
-    return TextButton.icon(
-      style: TextButton.styleFrom(
-        foregroundColor: btnColor,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    return Tooltip(
+      message: '将状态从「$currentStatus」流转为「$nextStatus」',
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          foregroundColor: btnColor,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        ),
+        icon: Icon(btnIcon, size: 16),
+        label: Text(btnText, style: const TextStyle(fontWeight: FontWeight.bold)),
+        onPressed: () => _showStatusConfirmDialog(uuuid, currentStatus, nextStatus, btnText),
       ),
-      icon: Icon(btnIcon, size: 16),
-      label: Text(btnText, style: const TextStyle(fontWeight: FontWeight.bold)),
-      onPressed: () => _showStatusConfirmDialog(uuuid, currentStatus, nextStatus, btnText),
     );
   }
 }
