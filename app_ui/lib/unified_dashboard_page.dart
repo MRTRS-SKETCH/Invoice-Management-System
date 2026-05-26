@@ -540,8 +540,8 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
             color: Colors.white.withValues(alpha: 0.75),
             borderRadius: borderRadius ?? BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
-            boxShadow: const [
-              BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, 4))
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 12, offset: Offset(0, 4))
             ],
           ),
           child: child,
@@ -604,7 +604,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           Expanded(
             child: GridView.count(
               crossAxisCount: 2,
-              childAspectRatio: 2.0,
+              childAspectRatio: 1.5,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
@@ -639,7 +639,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
               Flexible(
                 child: Text(display,
                     style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: color,
                         fontFamily: 'Consolas'),
@@ -655,7 +655,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                   ),
                   child: Text(trend,
                       style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: trendUp
                               ? const Color(0xFFEF4444)
@@ -703,14 +703,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                       } else {
                         bg = const Color(0xFF312E81);
                       }
-                      return Tooltip(
-                        message: '${_heatmap[i]['date']}: $count 笔',
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: bg,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
+                      return _AnimatedHeatmapBox(
+                        tooltip: '${_heatmap[i]['date']}: $count 笔',
+                        color: bg,
                       );
                     },
                   ),
@@ -968,8 +963,8 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: DataTable(
-                        headingRowColor: WidgetStateProperty.all(
-                            Colors.grey.withValues(alpha: 0.06)),
+                        headingRowColor:
+                            WidgetStateProperty.all(const Color(0xFFF8FAFC)),
                         dataRowMinHeight: 48,
                         dataRowMaxHeight: 52,
                         columnSpacing: 20,
@@ -1015,7 +1010,20 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                               _fetchBoundInvoices(uuuid);
                             },
                             cells: [
-                              DataCell(Text(date, style: const TextStyle(fontSize: 12))),
+                              // 首个单元格内模拟左侧高亮指示线
+                              DataCell(
+                                Container(
+                                  width: double.infinity,
+                                  alignment: Alignment.centerLeft,
+                                  decoration: BoxDecoration(
+                                    border: isActive
+                                        ? const Border(left: BorderSide(color: Color(0xFF4F46E5), width: 3))
+                                        : null,
+                                  ),
+                                  padding: EdgeInsets.only(left: isActive ? 5 : 8),
+                                  child: Text(date, style: const TextStyle(fontSize: 12)),
+                                ),
+                              ),
                               DataCell(Text(project,
                                   style: TextStyle(
                                       fontSize: 12,
@@ -1302,6 +1310,47 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+/// 热力图动画方块 — 还原 HTML 的 hover scale(1.3) + 阴影浮起效果
+// ═══════════════════════════════════════════════════════════════════════════════
+class _AnimatedHeatmapBox extends StatefulWidget {
+  final Color color;
+  final String tooltip;
+  const _AnimatedHeatmapBox({required this.color, required this.tooltip});
+
+  @override
+  State<_AnimatedHeatmapBox> createState() => _AnimatedHeatmapBoxState();
+}
+
+class _AnimatedHeatmapBoxState extends State<_AnimatedHeatmapBox> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final double scale = _isHovered ? 1.3 : 1.0;
+    return Tooltip(
+      message: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          transform: Matrix4.diagonal3Values(scale, scale, 1.0),
+          transformAlignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: widget.color,
+            borderRadius: BorderRadius.circular(_isHovered ? 4 : 2),
+            boxShadow: _isHovered
+                ? [const BoxShadow(color: Colors.black26, blurRadius: 4)]
+                : [],
           ),
         ),
       ),
