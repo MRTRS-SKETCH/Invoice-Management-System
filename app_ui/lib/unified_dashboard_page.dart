@@ -149,8 +149,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       if (search.isNotEmpty) params['search'] = search;
       if (_statusFilter != null) params['status'] = _statusFilter!;
 
-      final uri = Uri.parse('${AppConfig.baseUrl}/api/expenses/')
-          .replace(queryParameters: params);
+      final uri = Uri.parse(
+        '${AppConfig.baseUrl}/api/expenses/',
+      ).replace(queryParameters: params);
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
@@ -195,10 +196,12 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           'amount': double.parse(_amountController.text.trim()),
           'incurred_date': _dateController.text.trim(),
           'status': '待开票',
-          'project_name':
-              _projectController.text.trim().isEmpty ? null : _projectController.text.trim(),
-          'expense_type':
-              _typeController.text.trim().isEmpty ? null : _typeController.text.trim(),
+          'project_name': _projectController.text.trim().isEmpty
+              ? null
+              : _projectController.text.trim(),
+          'expense_type': _typeController.text.trim().isEmpty
+              ? null
+              : _typeController.text.trim(),
         }),
       );
 
@@ -245,8 +248,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
 
   Future<void> _deleteExpense(String uuuid) async {
     try {
-      final response =
-          await http.delete(Uri.parse('${AppConfig.baseUrl}/api/expenses/$uuuid'));
+      final response = await http.delete(
+        Uri.parse('${AppConfig.baseUrl}/api/expenses/$uuuid'),
+      );
       if (response.statusCode == 200) {
         _showSnackBar('记录已成功彻底删除');
         // 如果删除的是当前选中的行，清空右侧 PDF 面板
@@ -387,8 +391,10 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
         builder: (ctx, setDialogState) {
           return AlertDialog(
             backgroundColor: Colors.white.withValues(alpha: 0.95),
-            title: const Text('新增业务开销记录',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text(
+              '新增业务开销记录',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             content: SingleChildScrollView(
               child: Form(
                 key: _formKey,
@@ -399,7 +405,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     TextFormField(
                       controller: _titleController,
                       decoration: const InputDecoration(
-                          labelText: '事由 / 开销名称 *', prefixIcon: Icon(Icons.edit_note)),
+                        labelText: '事由 / 开销名称 *',
+                        prefixIcon: Icon(Icons.edit_note),
+                      ),
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? '请输入事由' : null,
                     ),
@@ -407,9 +415,13 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     // 金额
                     TextFormField(
                       controller: _amountController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       decoration: const InputDecoration(
-                          labelText: '金额 (元) *', prefixIcon: Icon(Icons.attach_money)),
+                        labelText: '金额 (元) *',
+                        prefixIcon: Icon(Icons.attach_money),
+                      ),
                       validator: (v) {
                         if (v == null || v.trim().isEmpty) return '请输入金额';
                         if (double.tryParse(v.trim()) == null) return '请输入合法数字';
@@ -422,7 +434,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                       controller: _dateController,
                       readOnly: true,
                       decoration: const InputDecoration(
-                          labelText: '发生日期 *', prefixIcon: Icon(Icons.calendar_today)),
+                        labelText: '发生日期 *',
+                        prefixIcon: Icon(Icons.calendar_today),
+                      ),
                       onTap: () async {
                         final picked = await showDatePicker(
                           context: ctx,
@@ -443,10 +457,14 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     // 开销项目 — Autocomplete
                     Autocomplete<String>(
                       optionsBuilder: (textEditingValue) {
-                        if (textEditingValue.text.isEmpty) return _existingProjects;
-                        return _existingProjects.where((opt) => opt
-                            .toLowerCase()
-                            .contains(textEditingValue.text.toLowerCase()));
+                        if (textEditingValue.text.isEmpty) {
+                          return _existingProjects;
+                        }
+                        return _existingProjects.where(
+                          (opt) => opt.toLowerCase().contains(
+                            textEditingValue.text.toLowerCase(),
+                          ),
+                        );
                       },
                       onSelected: (val) => _projectController.text = val,
                       fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
@@ -468,10 +486,14 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     // 开销类型 — Autocomplete
                     Autocomplete<String>(
                       optionsBuilder: (textEditingValue) {
-                        if (textEditingValue.text.isEmpty) return _existingTypes;
-                        return _existingTypes.where((opt) => opt
-                            .toLowerCase()
-                            .contains(textEditingValue.text.toLowerCase()));
+                        if (textEditingValue.text.isEmpty) {
+                          return _existingTypes;
+                        }
+                        return _existingTypes.where(
+                          (opt) => opt.toLowerCase().contains(
+                            textEditingValue.text.toLowerCase(),
+                          ),
+                        );
                       },
                       onSelected: (val) => _typeController.text = val,
                       fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
@@ -503,7 +525,10 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
                 onPressed: _addExpense,
-                child: const Text('提交保存', style: TextStyle(color: Colors.white)),
+                child: const Text(
+                  '提交保存',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
           );
@@ -531,7 +556,11 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
             borderRadius: borderRadius ?? BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
             boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 12, offset: Offset(0, 4))
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
             ],
           ),
           child: child,
@@ -546,18 +575,18 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
 
   /// 左侧：核心 KPI + 隐私切换
   Widget _buildKpiCard() {
-    // 计算核销中金额（含待报销+核销中两种状态）
+    // 逻辑计算保持不变...
     double pendingReimburse = _expenses
         .where((e) => e['status'] == '待报销' || e['status'] == '核销中')
         .fold<double>(0, (sum, e) => sum + (e['amount'] as num).toDouble());
-
-    // 年度总计用 summary 的 total_amount
     double yearTotal = (_summary['total_amount'] as num).toDouble();
     double monthTotal = _expenses
         .where((e) {
           final d = e['incurred_date']?.toString() ?? '';
           final now = DateTime.now();
-          return d.startsWith('${now.year}-${now.month.toString().padLeft(2, '0')}');
+          return d.startsWith(
+            '${now.year}-${now.month.toString().padLeft(2, '0')}',
+          );
         })
         .fold<double>(0, (sum, e) => sum + (e['amount'] as num).toDouble());
     double pending = (_summary['pending_amount'] as num).toDouble();
@@ -566,49 +595,89 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 标题行
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('核心财务指标',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              const Text(
+                '核心财务指标',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
               GestureDetector(
-                onTap: () => setState(() => _isPrivacyHidden = !_isPrivacyHidden),
+                onTap: () =>
+                    setState(() => _isPrivacyHidden = !_isPrivacyHidden),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    _isPrivacyHidden ? '🙈 显示金额' : '👁️ 隐藏金额',
+                    _isPrivacyHidden ? '127.0.0.1' : '127.0.0.1:18090',
                     style: const TextStyle(
-                        fontSize: 11, color: Color(0xFF4F46E5), fontWeight: FontWeight.w600),
+                      fontSize: 12,
+                      color: Color(0xFF4F46E5),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
           const Spacer(),
-          // 2×2 自由布局 — 避免 GridView 宽高比约束导致底部被裁切
+          // 还原 HTML grid-template-columns: 1fr 1fr; gap: 12px;
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            flex: 4,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(child: _kpiTile('本月累计 (元)', monthTotal, trend: '↑ 15%', trendUp: true,
-                        color: const Color(0xFF4F46E5))),
-                    Expanded(child: _kpiTile('待开票 (元)', pending, trend: '↓ 8%', trendUp: false,
-                        color: const Color(0xFFEA580C))),
-                  ],
+                Expanded(
+                  child: _kpiTile(
+                    '本月累计 (元)',
+                    monthTotal,
+                    trend: '↑ 15%',
+                    trendUp: true,
+                    color: const Color(0xFF4F46E5),
+                  ),
                 ),
-                Row(
-                  children: [
-                    Expanded(child: _kpiTile('核销中 (元)', pendingReimburse, trend: '↑ 2%', trendUp: true,
-                        color: const Color(0xFF0284C7))),
-                    Expanded(child: _kpiTile('年度总计 (元)', yearTotal, color: const Color(0xFF0F172A))),
-                  ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _kpiTile(
+                    '待开票 (元)',
+                    pending,
+                    trend: '↓ 8%',
+                    trendUp: false,
+                    color: const Color(0xFFEA580C),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            flex: 4,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _kpiTile(
+                    '核销中 (元)',
+                    pendingReimburse,
+                    trend: '↑ 2%',
+                    trendUp: true,
+                    color: const Color(0xFF0284C7),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _kpiTile(
+                    '年度总计 (元)',
+                    yearTotal,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ],
             ),
@@ -618,44 +687,40 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     );
   }
 
-  Widget _kpiTile(String title, double value,
-      {String? trend, bool trendUp = true, Color color = const Color(0xFF4F46E5)}) {
+  Widget _kpiTile(String title, double value, {String? trend, bool trendUp = true, Color color = const Color(0xFF4F46E5)}) {
     final display = _isPrivacyHidden ? '****' : value.toStringAsFixed(2);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+    
+    // 关键修复：把 FittedBox 提到了最外层！
+    // 这样无论是金额太长（横向），还是由于 Windows 字体缩放导致偏高（纵向）
+    // 它都会像矢量图(SVG)一样，整体完美平滑地缩小，绝对不会出现黄黑警告条。
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(title, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-          const SizedBox(height: 1),
-          // 数字 — 独占一行，不再和趋势挤
-          Text(display,
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: color,
-                  fontFamily: 'Consolas'),
-              overflow: TextOverflow.ellipsis),
-          // 趋势 — 数字下方独立一行
-          if (trend != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: trendUp ? const Color(0xFFFEE2E2) : const Color(0xFFD1FAE5),
-                  borderRadius: BorderRadius.circular(3),
+          Text(title, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          // 内部的 Row 照常排列即可，外层的 FittedBox 会罩着它
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(display, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color, fontFamily: 'Consolas')),
+              if (trend != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: trendUp ? const Color(0xFFFEE2E2) : const Color(0xFFD1FAE5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(trend, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: trendUp ? const Color(0xFFEF4444) : const Color(0xFF10B981))),
                 ),
-                child: Text(trend,
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: trendUp
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF10B981))),
-              ),
-            ),
+              ],
+            ],
+          ),
         ],
       ),
     );
@@ -667,20 +732,28 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('业务发生频次 (近3个月)',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const Text(
+            '业务发生频次 (近3个月)',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
           Expanded(
             child: _heatmap.isEmpty
-                ? const Center(child: Text('暂无数据', style: TextStyle(color: Colors.black38)))
+                ? const Center(
+                    child: Text(
+                      '暂无数据',
+                      style: TextStyle(color: Colors.black38),
+                    ),
+                  )
                 : GridView.builder(
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 24,
-                      childAspectRatio: 1,
-                      crossAxisSpacing: 3,
-                      mainAxisSpacing: 3,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 24,
+                          childAspectRatio: 1,
+                          crossAxisSpacing: 3,
+                          mainAxisSpacing: 3,
+                        ),
                     itemCount: _heatmap.length.clamp(0, 90),
                     itemBuilder: (ctx, i) {
                       final count = (_heatmap[i]['count'] as int?) ?? 0;
@@ -713,7 +786,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     // Top 3 项目
     final top3 = _distribution.take(3).toList();
     final maxAmt = top3.isNotEmpty
-        ? top3.map((d) => (d['amount'] as num).toDouble()).reduce((a, b) => a > b ? a : b)
+        ? top3
+              .map((d) => (d['amount'] as num).toDouble())
+              .reduce((a, b) => a > b ? a : b)
         : 1.0;
 
     // 环形图颜色
@@ -730,8 +805,10 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('多维开销分析 (本月)',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const Text(
+            '多维开销分析 (本月)',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
           Expanded(
             child: Row(
@@ -741,7 +818,14 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                   flex: 12,
                   child: top3.isEmpty
                       ? const Center(
-                          child: Text('暂无数据', style: TextStyle(color: Colors.black38, fontSize: 11)))
+                          child: Text(
+                            '暂无数据',
+                            style: TextStyle(
+                              color: Colors.black38,
+                              fontSize: 11,
+                            ),
+                          ),
+                        )
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: top3.asMap().entries.map((entry) {
@@ -761,16 +845,24 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(data['category']?.toString() ?? '-',
-                                          style: const TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF475569))),
-                                      Text('${(pct * 100).toStringAsFixed(0)}%',
-                                          style: const TextStyle(
-                                              fontSize: 10, color: Color(0xFF475569))),
+                                      Text(
+                                        data['category']?.toString() ?? '-',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF475569),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${(pct * 100).toStringAsFixed(0)}%',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Color(0xFF475569),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 3),
@@ -781,7 +873,8 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                                       minHeight: 6,
                                       backgroundColor: const Color(0xFFF1F5F9),
                                       valueColor: AlwaysStoppedAnimation<Color>(
-                                          barColors[idx % barColors.length]),
+                                        barColors[idx % barColors.length],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -801,7 +894,14 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                   flex: 8,
                   child: _typeDistribution.isEmpty
                       ? const Center(
-                          child: Text('暂无数据', style: TextStyle(color: Colors.black38, fontSize: 11)))
+                          child: Text(
+                            '暂无数据',
+                            style: TextStyle(
+                              color: Colors.black38,
+                              fontSize: 11,
+                            ),
+                          ),
+                        )
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -816,15 +916,21 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                                       .asMap()
                                       .entries
                                       .map((entry) {
-                                    final i = entry.key;
-                                    final d = entry.value;
-                                    return PieChartSectionData(
-                                      color: donutColors[i % donutColors.length],
-                                      value: (d['percentage'] as num).toDouble() * 100,
-                                      title: '',
-                                      radius: 14,
-                                    );
-                                  }).toList(),
+                                        final i = entry.key;
+                                        final d = entry.value;
+                                        return PieChartSectionData(
+                                          color:
+                                              donutColors[i %
+                                                  donutColors.length],
+                                          value:
+                                              (d['percentage'] as num)
+                                                  .toDouble() *
+                                              100,
+                                          title: '',
+                                          radius: 14,
+                                        );
+                                      })
+                                      .toList(),
                                 ),
                               ),
                             ),
@@ -834,10 +940,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                               spacing: 6,
                               runSpacing: 2,
                               alignment: WrapAlignment.center,
-                              children: _typeDistribution
-                                  .asMap()
-                                  .entries
-                                  .map((entry) {
+                              children: _typeDistribution.asMap().entries.map((
+                                entry,
+                              ) {
                                 final i = entry.key;
                                 final d = entry.value;
                                 return Row(
@@ -847,7 +952,8 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                                       width: 6,
                                       height: 6,
                                       decoration: BoxDecoration(
-                                        color: donutColors[i % donutColors.length],
+                                        color:
+                                            donutColors[i % donutColors.length],
                                         shape: BoxShape.circle,
                                       ),
                                     ),
@@ -855,7 +961,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                                     Text(
                                       d['category']?.toString() ?? '-',
                                       style: const TextStyle(
-                                          fontSize: 9, color: Color(0xFF64748B)),
+                                        fontSize: 9,
+                                        color: Color(0xFF64748B),
+                                      ),
                                     ),
                                   ],
                                 );
@@ -885,12 +993,16 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.4),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
             ),
             child: Row(
               children: [
-                const Text('流水明细',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                const Text(
+                  '流水明细',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(width: 16),
                 // 搜索框 — 移到标题右侧
                 SizedBox(
@@ -902,11 +1014,14 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     decoration: InputDecoration(
                       hintText: '搜索事由、项目或金额...',
                       hintStyle: const TextStyle(fontSize: 12),
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
                       isDense: true,
                     ),
                     onChanged: (_) => _fetchExpenses(),
@@ -921,7 +1036,15 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     underline: const SizedBox(),
                     style: const TextStyle(fontSize: 12, color: Colors.black87),
                     items: ['全部', '待开票', '已开票', '待报销', '核销中', '已完结']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12))))
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(
+                              s,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) {
                       setState(() => _statusFilter = v == '全部' ? null : v);
@@ -938,8 +1061,13 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.redAccent,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
                       ),
                       icon: const Icon(Icons.delete_outline, size: 16),
                       label: const Text('删除', style: TextStyle(fontSize: 12)),
@@ -949,7 +1077,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                           orElse: () => {'title': '未知'},
                         );
                         _showDeleteConfirmation(
-                            _selectedExpenseUuid!, exp['title']?.toString() ?? '未知');
+                          _selectedExpenseUuid!,
+                          exp['title']?.toString() ?? '未知',
+                        );
                       },
                     ),
                   ),
@@ -958,8 +1088,13 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4F46E5),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                   ),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('新增开销', style: TextStyle(fontSize: 12)),
@@ -973,48 +1108,112 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           Expanded(
             child: _expenses.isEmpty
                 ? const Center(
-                    child: Text('暂无匹配的开销记录流水',
-                        style: TextStyle(color: Colors.black54, fontSize: 14)))
+                    child: Text(
+                      '暂无匹配的开销记录流水',
+                      style: TextStyle(color: Colors.black54, fontSize: 14),
+                    ),
+                  )
                 : SingleChildScrollView(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: DataTable(
-                        headingRowColor:
-                            WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                        headingRowColor: WidgetStateProperty.all(
+                          const Color(0xFFF8FAFC),
+                        ),
                         dataRowMinHeight: 48,
                         dataRowMaxHeight: 52,
                         columnSpacing: 20,
                         columns: const [
-                          DataColumn(label: Text('发生日期',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                          DataColumn(label: Text('开销项目',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                          DataColumn(label: Text('开销类型',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                          DataColumn(label: Text('开销事由',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                          DataColumn(numeric: true, label: Text('金额 (¥)',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                          DataColumn(label: Text('状态',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
+                          // 给表头加上 11px 的占位，完美对齐下方带左侧蓝条的文字
+                          DataColumn(
+                            label: Row(
+                              children: [
+                                SizedBox(width: 11),
+                                Text(
+                                  '发生日期',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              '开销项目',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              '开销类型',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              '开销事由',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          DataColumn(
+                            numeric: true,
+                            label: Text(
+                              '金额 (¥)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              '状态',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
                         ],
                         rows: _expenses.map((expense) {
                           final uuuid = expense['uuuid']?.toString() ?? '';
                           final title = expense['title']?.toString() ?? '无事由';
                           final status = expense['status']?.toString() ?? '待开票';
-                          final project = expense['project_name']?.toString() ?? '-';
-                          final type = expense['expense_type']?.toString() ?? '-';
-                          final date = expense['incurred_date']?.toString() ?? '-';
-                          final amount = (expense['amount'] as num?)?.toDouble() ?? 0;
+                          final project =
+                              expense['project_name']?.toString() ?? '-';
+                          final type =
+                              expense['expense_type']?.toString() ?? '-';
+                          final date =
+                              expense['incurred_date']?.toString() ?? '-';
+                          final amount =
+                              (expense['amount'] as num?)?.toDouble() ?? 0;
                           final isActive = uuuid == _selectedExpenseUuid;
                           final statusClr = _statusColor(status);
 
                           return DataRow(
                             selected: isActive,
-                            color: isActive
-                                ? WidgetStateProperty.all(
-                                    const Color(0xFFEEF2FF))
-                                : null,
+                            color: WidgetStateProperty.resolveWith<Color?>((
+                              states,
+                            ) {
+                              if (states.contains(WidgetState.selected)) {
+                                return const Color(0xFFEEF2FF);
+                              }
+                              if (states.contains(WidgetState.hovered)) {
+                                return Colors.white.withValues(alpha: 0.8);
+                              }
+                              return null;
+                            }),
                             onSelectChanged: (_) {
                               setState(() {
                                 _selectedExpenseUuid = uuuid;
@@ -1024,49 +1223,78 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                               _fetchBoundInvoices(uuuid);
                             },
                             cells: [
-                              // 首个单元格：选中时左侧蓝色指示条
                               DataCell(
                                 Row(
                                   children: [
-                                    if (isActive)
-                                      Container(
-                                        width: 3,
-                                        height: 28,
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF4F46E5),
-                                          borderRadius: BorderRadius.horizontal(right: Radius.circular(2)),
-                                        ),
+                                    // 用透明色占位，保证选中和未选中时文字绝对对齐
+                                    Container(
+                                      width: 3,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: isActive
+                                            ? const Color(0xFF4F46E5)
+                                            : Colors.transparent,
+                                        borderRadius:
+                                            const BorderRadius.horizontal(
+                                              right: Radius.circular(2),
+                                            ),
                                       ),
+                                    ),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: Text(date, style: const TextStyle(fontSize: 12)),
+                                      child: Text(
+                                        date,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Color(0xFF334155),
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                              DataCell(Text(project,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight:
-                                          project != '-' ? FontWeight.w600 : FontWeight.normal))),
-                              DataCell(_typeTag(type)),
-                              DataCell(Text(title,
-                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                  overflow: TextOverflow.ellipsis)),
-                              DataCell(Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  _isPrivacyHidden ? '****' : amount.toStringAsFixed(2),
+                              DataCell(
+                                Text(
+                                  project,
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontFamily: 'Consolas',
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF0F172A),
-                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                    color: const Color(0xFF334155),
+                                    fontWeight: project != '-'
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
                                   ),
                                 ),
-                              )),
-                              DataCell(_statusDropdown(uuuid, status, statusClr)),
+                              ),
+                              DataCell(_typeTag(type)),
+                              DataCell(
+                                Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              DataCell(
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    _isPrivacyHidden
+                                        ? '****'
+                                        : amount.toStringAsFixed(2),
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontFamily: 'Consolas', // 对齐 HTML 等宽字体
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                _statusDropdown(uuuid, status, statusClr),
+                              ),
                             ],
                           );
                         }).toList(),
@@ -1102,9 +1330,14 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
-      child: Text(type,
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        type,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
+      ),
     );
   }
 
@@ -1117,18 +1350,22 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(4)),
-        child: Text(status,
-            style: TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          status,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
       );
     }
 
     // 有可转换状态 → 可点击展开下拉
-    final nextClrs = [
-      Colors.green, Colors.blue, Colors.orange, Colors.purple,
-    ];
+    final nextClrs = [Colors.green, Colors.blue, Colors.orange, Colors.purple];
 
     return PopupMenuButton<String>(
       offset: const Offset(0, 32),
@@ -1140,14 +1377,20 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.arrow_forward_ios, size: 12,
-                  color: nextClrs[entry.key % nextClrs.length]),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 12,
+                color: nextClrs[entry.key % nextClrs.length],
+              ),
               const SizedBox(width: 6),
-              Text('转为「${entry.value}」',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: nextClrs[entry.key % nextClrs.length])),
+              Text(
+                '转为「${entry.value}」',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: nextClrs[entry.key % nextClrs.length],
+                ),
+              ),
             ],
           ),
         );
@@ -1155,14 +1398,20 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(4)),
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(status,
-                style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+            Text(
+              status,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
             const SizedBox(width: 3),
             Icon(Icons.arrow_drop_down, size: 14, color: color),
           ],
@@ -1196,7 +1445,8 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     if (_selectedInvoices.isNotEmpty &&
         _selectedInvoiceIndex >= 0 &&
         _selectedInvoiceIndex < _selectedInvoices.length) {
-      previewPath = _selectedInvoices[_selectedInvoiceIndex]['saved_path'] as String?;
+      previewPath =
+          _selectedInvoices[_selectedInvoiceIndex]['saved_path'] as String?;
     }
 
     return _glassCard(
@@ -1210,7 +1460,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
               height: 40,
               decoration: BoxDecoration(
                 color: const Color(0xFF1E293B).withValues(alpha: 0.06),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(12),
+                ),
               ),
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
@@ -1231,9 +1483,11 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.picture_as_pdf,
-                              size: 16,
-                              color: isActive ? Colors.blue : Colors.red),
+                          Icon(
+                            Icons.picture_as_pdf,
+                            size: 16,
+                            color: isActive ? Colors.blue : Colors.red,
+                          ),
                           const SizedBox(width: 6),
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 140),
@@ -1241,9 +1495,11 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                               inv['file_name']?.toString() ?? '未知',
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight:
-                                      isActive ? FontWeight.bold : FontWeight.normal),
+                                fontSize: 11,
+                                fontWeight: isActive
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -1252,8 +1508,10 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                             tooltip: '解绑删除',
                             onPressed: () => _deleteInvoice(inv['uuuid']),
                             padding: EdgeInsets.zero,
-                            constraints:
-                                const BoxConstraints(minWidth: 24, minHeight: 24),
+                            constraints: const BoxConstraints(
+                              minWidth: 24,
+                              minHeight: 24,
+                            ),
                           ),
                         ],
                       ),
@@ -1286,41 +1544,51 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                   color: _isDragging
                       ? Colors.blue.withValues(alpha: 0.15)
                       : const Color(0xFF525659).withValues(alpha: 0.08),
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(12),
+                  ),
                   border: _isDragging
                       ? Border.all(color: Colors.blue, width: 2)
                       : null,
                 ),
                 child: previewPath != null
                     ? ClipRRect(
-                        borderRadius:
-                            const BorderRadius.vertical(bottom: Radius.circular(12)),
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(12),
+                        ),
                         child: SfPdfViewer.file(File(previewPath)),
                       )
                     : Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.picture_as_pdf_outlined,
-                                size: 64,
-                                color: _isDragging
-                                    ? Colors.blue
-                                    : Colors.grey.shade400),
+                            Icon(
+                              Icons.picture_as_pdf_outlined,
+                              size: 64,
+                              color: _isDragging
+                                  ? Colors.blue
+                                  : Colors.grey.shade400,
+                            ),
                             const SizedBox(height: 12),
                             Text(
                               _selectedExpenseUuid == null
                                   ? '请点击左侧列表查看发票原件'
                                   : '将 PDF 发票拖拽到此处绑定',
                               style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey.shade500,
-                                  fontWeight: FontWeight.w500),
+                                fontSize: 13,
+                                color: Colors.grey.shade500,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                             if (_selectedExpenseUuid != null) ...[
                               const SizedBox(height: 8),
-                              Text('（支持 .pdf 格式文件）',
-                                  style: TextStyle(
-                                      fontSize: 11, color: Colors.grey.shade400)),
+                              Text(
+                                '（支持 .pdf 格式文件）',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade400,
+                                ),
+                              ),
                             ],
                           ],
                         ),
@@ -1339,9 +1607,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -1350,33 +1616,33 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           gradient: LinearGradient(
             colors: [Color(0xFFE2E8F0), Color(0xFFF8FAFC)],
             begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            end: Alignment.bottomRight, // 对应 HTML 135deg
           ),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          padding: const EdgeInsets.all(16.0), // 完全对齐 HTML padding: 16px 20px
           child: Column(
             children: [
               // ── 顶部驾驶舱 ──
               SizedBox(
-                height: 190,
+                height: 170, // 完美还原 HTML height: 170px
                 child: Row(
                   children: [
                     Expanded(flex: 25, child: _buildKpiCard()),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 16), // 还原 HTML gap: 16px
                     Expanded(flex: 40, child: _buildHeatmapCard()),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 16),
                     Expanded(flex: 35, child: _buildDualAnalysisCard()),
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               // ── 下方业务区 ──
               Expanded(
                 child: Row(
                   children: [
                     Expanded(flex: 65, child: _buildTablePanel()),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 16),
                     Expanded(flex: 35, child: _buildPdfPanel()),
                   ],
                 ),
