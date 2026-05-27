@@ -132,11 +132,14 @@ class _WinBtnState extends State<_WinBtn> {
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
           width: 46,
           height: 40,
           color: bgColor,
-          child: Icon(widget.icon, size: 16, color: iconColor),
+          child: Center(
+            child: Icon(widget.icon, size: 16, color: iconColor),
+          ),
         ),
       ),
     );

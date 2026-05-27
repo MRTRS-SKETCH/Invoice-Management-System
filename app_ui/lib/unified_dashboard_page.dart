@@ -102,30 +102,44 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
 
   Future<void> _fetchAllData() async {
     setState(() => _isLoading = true);
-    try {
-      final base = AppConfig.baseUrl;
-      final results = await Future.wait([
-        http.get(Uri.parse('$base/api/dashboard/summary')),
-        http.get(Uri.parse('$base/api/dashboard/heatmap')),
-        http.get(Uri.parse('$base/api/dashboard/distribution')),
-        http.get(Uri.parse('$base/api/dashboard/type-distribution')),
-        http.get(Uri.parse('$base/api/expenses/?limit=200')),
-      ]);
 
-      if (results.every((r) => r.statusCode == 200)) {
-        setState(() {
-          _summary = json.decode(utf8.decode(results[0].bodyBytes));
-          _heatmap = json.decode(utf8.decode(results[1].bodyBytes));
-          _distribution = json.decode(utf8.decode(results[2].bodyBytes));
-          _typeDistribution = json.decode(utf8.decode(results[3].bodyBytes));
-          _expenses = json.decode(utf8.decode(results[4].bodyBytes));
-          _isLoading = false;
-        });
+    final base = AppConfig.baseUrl;
+    const maxRetries = 3;
+
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        final results = await Future.wait([
+          http.get(Uri.parse('$base/api/dashboard/summary')),
+          http.get(Uri.parse('$base/api/dashboard/heatmap')),
+          http.get(Uri.parse('$base/api/dashboard/distribution')),
+          http.get(Uri.parse('$base/api/dashboard/type-distribution')),
+          http.get(Uri.parse('$base/api/expenses/?limit=200')),
+        ]);
+
+        if (results.every((r) => r.statusCode == 200)) {
+          setState(() {
+            _summary = json.decode(utf8.decode(results[0].bodyBytes));
+            _heatmap = json.decode(utf8.decode(results[1].bodyBytes));
+            _distribution = json.decode(utf8.decode(results[2].bodyBytes));
+            _typeDistribution = json.decode(utf8.decode(results[3].bodyBytes));
+            _expenses = json.decode(utf8.decode(results[4].bodyBytes));
+            _isLoading = false;
+          });
+          return;
+        }
+        // 非 200 状态码，等一会儿重试
+        if (attempt < maxRetries - 1) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } catch (e) {
+        AppLogger.error('获取驾驶舱数据失败 (第${attempt + 1}次)', e);
+        if (attempt < maxRetries - 1) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
       }
-    } catch (e) {
-      AppLogger.error('获取驾驶舱数据失败', e);
-      setState(() => _isLoading = false);
     }
+    // 重试全部失败
+    setState(() => _isLoading = false);
   }
 
   Future<void> _fetchExpenses() async {
@@ -330,30 +344,6 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       default:
         return Colors.grey;
     }
-  }
-
-  /// 动态状态流转按钮（严格遵循后端 VALID_TRANSITIONS 白名单）
-  Widget _buildStatusActionBtn(String uuuid, String currentStatus) {
-    switch (currentStatus) {
-      case '待开票':
-        return _flowBtn('开票', Icons.receipt, Colors.green, '已开票', uuuid);
-      case '已开票':
-        return _flowBtn('去报销', Icons.assignment_turned_in, Colors.blue, '待报销', uuuid);
-      case '待报销':
-        return _flowBtn('核销', Icons.hourglass_bottom, Colors.orange, '核销中', uuuid);
-      case '核销中':
-        return _flowBtn('完结', Icons.done_all, Colors.purple, '已完结', uuuid);
-      default:
-        return const SizedBox(width: 8);
-    }
-  }
-
-  Widget _flowBtn(String label, IconData icon, Color color, String nextStatus, String uuuid) {
-    return TextButton.icon(
-      icon: Icon(icon, size: 16, color: color),
-      label: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
-      onPressed: () => _updateExpenseStatus(uuuid, nextStatus),
-    );
   }
 
   /// 弹出删除确认框
@@ -600,21 +590,26 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
             ],
           ),
           const Spacer(),
-          // 2×2 Grid
+          // 2×2 自由布局 — 避免 GridView 宽高比约束导致底部被裁切
           Expanded(
-            child: GridView.count(
-              crossAxisCount: 2,
-              childAspectRatio: 1.5,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _kpiTile('本月累计 (元)', monthTotal, trend: '↑ 15%', trendUp: true,
-                    color: const Color(0xFF4F46E5)),
-                _kpiTile('待开票 (元)', pending, trend: '↓ 8%', trendUp: false,
-                    color: const Color(0xFFEA580C)),
-                _kpiTile('核销中 (元)', pendingReimburse, trend: '↑ 2%', trendUp: true,
-                    color: const Color(0xFF0284C7)),
-                _kpiTile('年度总计 (元)', yearTotal, color: const Color(0xFF0F172A)),
+                Row(
+                  children: [
+                    Expanded(child: _kpiTile('本月累计 (元)', monthTotal, trend: '↑ 15%', trendUp: true,
+                        color: const Color(0xFF4F46E5))),
+                    Expanded(child: _kpiTile('待开票 (元)', pending, trend: '↓ 8%', trendUp: false,
+                        color: const Color(0xFFEA580C))),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(child: _kpiTile('核销中 (元)', pendingReimburse, trend: '↑ 2%', trendUp: true,
+                        color: const Color(0xFF0284C7))),
+                    Expanded(child: _kpiTile('年度总计 (元)', yearTotal, color: const Color(0xFF0F172A))),
+                  ],
+                ),
               ],
             ),
           ),
@@ -627,43 +622,40 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       {String? trend, bool trendUp = true, Color color = const Color(0xFF4F46E5)}) {
     final display = _isPrivacyHidden ? '****' : value.toStringAsFixed(2);
     return Padding(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(title, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              Flexible(
-                child: Text(display,
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                        fontFamily: 'Consolas'),
-                    overflow: TextOverflow.ellipsis),
-              ),
-              if (trend != null) ...[
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: trendUp ? const Color(0xFFFEE2E2) : const Color(0xFFD1FAE5),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(trend,
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: trendUp
-                              ? const Color(0xFFEF4444)
-                              : const Color(0xFF10B981))),
+          const SizedBox(height: 1),
+          // 数字 — 独占一行，不再和趋势挤
+          Text(display,
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                  fontFamily: 'Consolas'),
+              overflow: TextOverflow.ellipsis),
+          // 趋势 — 数字下方独立一行
+          if (trend != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: trendUp ? const Color(0xFFFEE2E2) : const Color(0xFFD1FAE5),
+                  borderRadius: BorderRadius.circular(3),
                 ),
-              ],
-            ],
-          ),
+                child: Text(trend,
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: trendUp
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFF10B981))),
+              ),
+            ),
         ],
       ),
     );
@@ -682,8 +674,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
             child: _heatmap.isEmpty
                 ? const Center(child: Text('暂无数据', style: TextStyle(color: Colors.black38)))
                 : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 15,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 24,
                       childAspectRatio: 1,
                       crossAxisSpacing: 3,
                       mainAxisSpacing: 3,
@@ -898,8 +891,8 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
               children: [
                 const Text('流水明细',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                const Spacer(),
-                // 搜索框
+                const SizedBox(width: 16),
+                // 搜索框 — 移到标题右侧
                 SizedBox(
                   width: 180,
                   height: 34,
@@ -920,7 +913,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // 状态筛选下拉
+                // 状态筛选 — 紧跟搜索框
                 SizedBox(
                   height: 34,
                   child: DropdownButton<String>(
@@ -936,7 +929,30 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     },
                   ),
                 ),
-                const SizedBox(width: 8),
+                const Spacer(),
+                // 选中行时出现删除按钮
+                if (_selectedExpenseUuid != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: const Text('删除', style: TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        final exp = _expenses.firstWhere(
+                          (e) => e['uuuid'] == _selectedExpenseUuid,
+                          orElse: () => {'title': '未知'},
+                        );
+                        _showDeleteConfirmation(
+                            _selectedExpenseUuid!, exp['title']?.toString() ?? '未知');
+                      },
+                    ),
+                  ),
                 // 新增按钮
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
@@ -981,8 +997,6 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
                           DataColumn(label: Text('状态',
                               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                          DataColumn(label: Text('操作',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
                         ],
                         rows: _expenses.map((expense) {
                           final uuuid = expense['uuuid']?.toString() ?? '';
@@ -1010,18 +1024,24 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                               _fetchBoundInvoices(uuuid);
                             },
                             cells: [
-                              // 首个单元格内模拟左侧高亮指示线
+                              // 首个单元格：选中时左侧蓝色指示条
                               DataCell(
-                                Container(
-                                  width: double.infinity,
-                                  alignment: Alignment.centerLeft,
-                                  decoration: BoxDecoration(
-                                    border: isActive
-                                        ? const Border(left: BorderSide(color: Color(0xFF4F46E5), width: 3))
-                                        : null,
-                                  ),
-                                  padding: EdgeInsets.only(left: isActive ? 5 : 8),
-                                  child: Text(date, style: const TextStyle(fontSize: 12)),
+                                Row(
+                                  children: [
+                                    if (isActive)
+                                      Container(
+                                        width: 3,
+                                        height: 28,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF4F46E5),
+                                          borderRadius: BorderRadius.horizontal(right: Radius.circular(2)),
+                                        ),
+                                      ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(date, style: const TextStyle(fontSize: 12)),
+                                    ),
+                                  ],
                                 ),
                               ),
                               DataCell(Text(project,
@@ -1046,21 +1066,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                                   ),
                                 ),
                               )),
-                              DataCell(_statusTag(status, statusClr)),
-                              DataCell(Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _buildStatusActionBtn(uuuid, status),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, size: 16),
-                                    color: Colors.redAccent,
-                                    tooltip: '删除记录',
-                                    onPressed: () => _showDeleteConfirmation(uuuid, title),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                                  ),
-                                ],
-                              )),
+                              DataCell(_statusDropdown(uuuid, status, statusClr)),
                             ],
                           );
                         }).toList(),
@@ -1102,17 +1108,83 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     );
   }
 
-  /// 状态标签
-  Widget _statusTag(String status, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(4)),
-      child: Text(status,
-          style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+  /// 状态标签（非终态时作为 PopupMenuButton 触发器）
+  Widget _statusDropdown(String uuuid, String status, Color color) {
+    final nextStatuses = _getNextStatuses(status);
+
+    // 终态或无可转换状态 → 纯标签
+    if (nextStatuses.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(4)),
+        child: Text(status,
+            style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+      );
+    }
+
+    // 有可转换状态 → 可点击展开下拉
+    final nextClrs = [
+      Colors.green, Colors.blue, Colors.orange, Colors.purple,
+    ];
+
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 32),
+      padding: EdgeInsets.zero,
+      onSelected: (next) => _updateExpenseStatus(uuuid, next),
+      itemBuilder: (_) => nextStatuses.asMap().entries.map((entry) {
+        return PopupMenuItem<String>(
+          value: entry.value,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_forward_ios, size: 12,
+                  color: nextClrs[entry.key % nextClrs.length]),
+              const SizedBox(width: 6),
+              Text('转为「${entry.value}」',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: nextClrs[entry.key % nextClrs.length])),
+            ],
+          ),
+        );
+      }).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(4)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(status,
+                style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+            const SizedBox(width: 3),
+            Icon(Icons.arrow_drop_down, size: 14, color: color),
+          ],
+        ),
+      ),
     );
+  }
+
+  /// 获取当前状态的合法下一状态列表（对应后端 VALID_TRANSITIONS）
+  List<String> _getNextStatuses(String currentStatus) {
+    switch (currentStatus) {
+      case '待开票':
+        return ['已开票'];
+      case '已开票':
+        return ['待报销'];
+      case '待报销':
+        return ['核销中'];
+      case '核销中':
+        return ['已完结'];
+      default:
+        return [];
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════
