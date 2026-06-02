@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, pool
+from sqlalchemy import create_engine, pool, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 from pathlib import Path
 
@@ -28,6 +28,14 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# ── 启用 WAL 模式：允许并发读 + 单写，避免读写互斥阻塞 ──
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """每次新连接建立时，启用 WAL 日志模式"""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
 
 def get_db():
     db = SessionLocal() # 【开门】前端一发来请求，立刻创建一个专属的数据库连接

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
-import 'unified_dashboard_page.dart';
+import 'pages/dashboard/unified_dashboard_page.dart';
 import 'package:flutter/foundation.dart';
 import 'logger.dart';
 import 'widgets/custom_title_bar.dart';
@@ -33,7 +33,7 @@ void main() async {
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.hidden,
-    title: '财务与发票管理系统',
+    title: '发票管理系统',
   );
   
   windowManager.waitUntilReadyToShow(windowOptions, () async {
