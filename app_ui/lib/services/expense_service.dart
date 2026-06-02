@@ -27,17 +27,24 @@ class ExpenseService {
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
 
-  /// 获取按 project_name 分组的开销分布（项目进度条用）
-  static Future<List<dynamic>> fetchDistributionData() async {
-    final resp = await http.get(Uri.parse('$_base/api/dashboard/distribution'));
+  /// 获取按 project_name 分组的开销分布（项目进度条用），支持时间范围
+  static Future<List<dynamic>> fetchDistributionData({int? days}) async {
+    final params = <String, String>{};
+    if (days != null) params['days'] = days.toString();
+    final uri = Uri.parse('$_base/api/dashboard/distribution')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final resp = await http.get(uri);
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
 
-  /// 获取按 expense_type 分组的开销分布（环形图用）
-  static Future<List<dynamic>> fetchTypeDistributionData() async {
-    final resp =
-        await http.get(Uri.parse('$_base/api/dashboard/type-distribution'));
+  /// 获取按 expense_type 分组的开销分布（环形图用），支持时间范围
+  static Future<List<dynamic>> fetchTypeDistributionData({int? days}) async {
+    final params = <String, String>{};
+    if (days != null) params['days'] = days.toString();
+    final uri = Uri.parse('$_base/api/dashboard/type-distribution')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final resp = await http.get(uri);
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
@@ -46,14 +53,18 @@ class ExpenseService {
   // 📋 业务流水
   // ═══════════════════════════════════════════════════════════════════
 
-  /// 获取开销流水列表，支持搜索和状态筛选
+  /// 获取开销流水列表，支持搜索、状态筛选、日期范围
   static Future<List<dynamic>> fetchExpenses({
     String? search,
     String? status,
+    String? dateFrom,
+    String? dateTo,
   }) async {
     final params = <String, String>{'limit': '200'};
     if (search != null && search.isNotEmpty) params['search'] = search;
     if (status != null) params['status'] = status;
+    if (dateFrom != null) params['date_from'] = dateFrom;
+    if (dateTo != null) params['date_to'] = dateTo;
 
     final uri = Uri.parse('$_base/api/expenses/')
         .replace(queryParameters: params);
@@ -96,6 +107,22 @@ class ExpenseService {
     final resp = await http.delete(Uri.parse('$_base/api/expenses/$uuuid'));
     if (resp.statusCode == 200) return true;
     throw Exception('删除失败: ${resp.statusCode}');
+  }
+
+  /// 屏蔽一条开销记录（独立旁路，不影响正常状态流转）
+  static Future<bool> blockExpense(String uuuid) async {
+    final resp =
+        await http.post(Uri.parse('$_base/api/expenses/$uuuid/block'));
+    if (resp.statusCode == 200) return true;
+    throw Exception('屏蔽失败: ${resp.statusCode}');
+  }
+
+  /// 取消屏蔽，恢复到屏蔽前的原始状态
+  static Future<bool> unblockExpense(String uuuid) async {
+    final resp =
+        await http.post(Uri.parse('$_base/api/expenses/$uuuid/unblock'));
+    if (resp.statusCode == 200) return true;
+    throw Exception('取消屏蔽失败: ${resp.statusCode}');
   }
 
   // ═══════════════════════════════════════════════════════════════════

@@ -62,7 +62,39 @@ def update_expense(uuuid: str, expense_update: schemas.ExpenseUpdate, db: Sessio
         db.rollback()
         raise HTTPException(status_code=500, detail=f"更新操作失败: {str(e)}")
 
-# 4. 删除某条记录
+# 4. 屏蔽某条记录（独立旁路，不参与正常流转）
+@router.post("/{uuuid}/block")
+def block_expense(uuuid: str, db: Session = Depends(get_db)):
+    logger.info("POST /api/expenses/{}/block | 屏蔽请求", uuuid)
+    try:
+        success = crud.block_expense(db=db, uuuid=uuuid)
+        if not success:
+            raise HTTPException(status_code=404, detail="未找到该笔开销记录或已处于屏蔽态")
+        return {"status": "success", "message": "记录已屏蔽", "uuuid": uuuid}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.opt(exception=True).error("屏蔽失败 | uuuid={}", uuuid)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"屏蔽操作失败: {str(e)}")
+
+# 5. 取消屏蔽
+@router.post("/{uuuid}/unblock")
+def unblock_expense(uuuid: str, db: Session = Depends(get_db)):
+    logger.info("POST /api/expenses/{}/unblock | 取消屏蔽请求", uuuid)
+    try:
+        success = crud.unblock_expense(db=db, uuuid=uuuid)
+        if not success:
+            raise HTTPException(status_code=404, detail="未找到该笔记录或当前并非屏蔽态")
+        return {"status": "success", "message": "已取消屏蔽", "uuuid": uuuid}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.opt(exception=True).error("取消屏蔽失败 | uuuid={}", uuuid)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"取消屏蔽操作失败: {str(e)}")
+
+# 6. 删除某条记录
 @router.delete("/{uuuid}")
 def delete_expense(uuuid: str, db: Session = Depends(get_db)):
     logger.info("DELETE /api/expenses/{} | 删除开销请求", uuuid)

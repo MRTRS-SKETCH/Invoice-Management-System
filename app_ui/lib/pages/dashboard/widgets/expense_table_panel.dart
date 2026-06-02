@@ -20,6 +20,9 @@ class ExpenseTablePanel extends StatefulWidget {
   final ValueChanged<String> onSelectRowChanged;
   final ValueChanged<Set<String>> onMultiSelectChanged;
   final void Function(String uuuid, String nextStatus) onUpdateStatus;
+  final void Function(Set<String> uuuids, String nextStatus) onBatchUpdateStatus;
+  final ValueChanged<String> onBlockExpense;
+  final ValueChanged<String> onUnblockExpense;
   final ValueChanged<String> onDeleteExpense;
   final VoidCallback onAddExpenseSubmitted;
   final ValueChanged<String?> onStatusFilterChanged;
@@ -36,6 +39,9 @@ class ExpenseTablePanel extends StatefulWidget {
     required this.onSelectRowChanged,
     required this.onMultiSelectChanged,
     required this.onUpdateStatus,
+    required this.onBatchUpdateStatus,
+    required this.onBlockExpense,
+    required this.onUnblockExpense,
     required this.onDeleteExpense,
     required this.onAddExpenseSubmitted,
     required this.onStatusFilterChanged,
@@ -59,6 +65,9 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
   int _currentPage = 0;
   static const int _pageSize = 50;
 
+  // ── 搜索展开 ──
+  bool _searchVisible = false;
+
   int get _totalPages =>
       widget.expenses.isEmpty ? 0 : (widget.expenses.length / _pageSize).ceil();
 
@@ -81,10 +90,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
   @override
   void didUpdateWidget(covariant ExpenseTablePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 数据源变化（搜索/筛选触发刷新）时重置到第一页
-    if (oldWidget.expenses != widget.expenses) {
-      _currentPage = 0;
-    }
+    // 不强制重置页码 — _pagedExpenses getter 会自动处理越界回退
   }
 
   // ── 从当前流水列表中提取去重后的 project / type 建议 ──
@@ -134,8 +140,18 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
     );
   }
 
-  // ── 工具栏：标题 + 搜索 + 筛选 + 删除 + 新增 ──
+  // ── 工具栏：标题 + 搜索 + 状态筛选 + 操作按钮 ──
   Widget _buildToolbar() {
+    // 根据复选框选中的条目类型判断显示哪些操作按钮
+    final selectedItems = widget.expenses
+        .where((e) =>
+            widget.selectedUuuids.contains(e['uuuid']?.toString()))
+        .toList();
+    final allBlocked = selectedItems.isNotEmpty &&
+        selectedItems.every((e) => e['status'] == '已屏蔽');
+    final allNormal = selectedItems.isNotEmpty &&
+        selectedItems.every((e) => e['status'] != '已屏蔽');
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
@@ -143,87 +159,224 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
         borderRadius:
             const BorderRadius.vertical(top: Radius.circular(12)),
       ),
-      child: Row(
-        children: [
-          const Text('流水明细',
-              style:
-                  TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 16),
-          // 搜索框
-          SizedBox(
-            width: 180,
-            height: 34,
-            child: TextField(
-              controller: widget.searchController,
-              style: const TextStyle(fontSize: 12),
-              textAlignVertical: TextAlignVertical.center,
-              decoration: InputDecoration(
-                hintText: '搜索事由、项目或金额...',
-                hintStyle: const TextStyle(fontSize: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            const Text('明细',
+                style:
+                    TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(width: 12),
+            // 搜索按钮（点击展开搜索框）
+            _buildSearch(),
+            const SizedBox(width: 8),
+            // 状态筛选
+            SizedBox(
+              height: 34,
+              child: DropdownButton<String>(
+                value: widget.currentStatusFilter ?? '全部',
+                underline: const SizedBox(),
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFCBD5E1)),
-                ),
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                items: ['全部', '待开票', '已开票', '待报销', '核销中', '已完结', '已屏蔽']
+                    .map((s) => DropdownMenuItem(
+                          value: s,
+                          child:
+                              Text(s, style: const TextStyle(fontSize: 12)),
+                        ))
+                    .toList(),
+                onChanged: (v) =>
+                    widget.onStatusFilterChanged(v == '全部' ? null : v),
               ),
-              onChanged: (_) => widget.onSearchChanged(),
             ),
-          ),
-          const SizedBox(width: 8),
-          // 状态筛选
-          SizedBox(
-            height: 34,
-            child: DropdownButton<String>(
-              value: widget.currentStatusFilter ?? '全部',
-              underline: const SizedBox(),
-              style: const TextStyle(fontSize: 12, color: Colors.black87),
-              items: ['全部', '待开票', '已开票', '待报销', '核销中', '已完结']
-                  .map((s) => DropdownMenuItem(
-                        value: s,
-                        child: Text(s, style: const TextStyle(fontSize: 12)),
-                      ))
-                  .toList(),
-              onChanged: (v) =>
-                  widget.onStatusFilterChanged(v == '全部' ? null : v),
-            ),
-          ),
-          const Spacer(),
-          // 选中行时出现删除按钮
-          if (widget.selectedExpenseUuid != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _deleteBtn(),
-            ),
-          // 新增按钮
-          _addBtn(),
-        ],
+            const SizedBox(width: 8),
+            // ── 批量状态修改（下拉菜单，带颜色，不含已屏蔽）──
+            if (widget.selectedUuuids.isNotEmpty)
+              _batchStatusMenu(),
+            const SizedBox(width: 4),
+            // ── 操作按钮：根据选中条目类型动态显示 ──
+            if (allBlocked) ...[
+              _actionBtn('恢复', Icons.lock_open, Colors.orange,
+                  () => _batchUnblock()),
+              _batchDeleteBtn(),
+            ],
+            if (allNormal)
+              _actionBtn('屏蔽', Icons.block, Colors.orange.shade700,
+                  () => _batchBlock()),
+            _addBtn(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _deleteBtn() {
+  /// 批量状态修改 — 带颜色的下拉菜单（不含已屏蔽）
+  Widget _batchStatusMenu() {
+    const items = [
+      ('待开票', Colors.orange),
+      ('已开票', Colors.green),
+      ('待报销', Colors.amber),
+      ('核销中', Colors.blue),
+      ('已完结', Colors.purple),
+    ];
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 34),
+      tooltip: '批量更改状态',
+      onSelected: (next) =>
+          widget.onBatchUpdateStatus(widget.selectedUuuids, next),
+      itemBuilder: (_) => items.map((e) {
+        return PopupMenuItem<String>(
+          value: e.$1,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                  color: e.$2, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(e.$1, style: const TextStyle(fontSize: 12)),
+          ]),
+        );
+      }).toList(),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4F46E5),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.sync, size: 14, color: Colors.white),
+          const SizedBox(width: 4),
+          Text('批量 (${widget.selectedUuuids.length})',
+              style:
+                  const TextStyle(fontSize: 11, color: Colors.white)),
+          const Icon(Icons.arrow_drop_down,
+              size: 16, color: Colors.white),
+        ]),
+      ),
+    );
+  }
+
+  /// 通用操作按钮（屏蔽/取消屏蔽）
+  Widget _actionBtn(String label, IconData icon, Color color, VoidCallback onTap) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      ),
+      icon: Icon(icon, size: 14),
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      onPressed: onTap,
+    );
+  }
+
+  /// 搜索：按钮形式，点击展开输入框
+  Widget _buildSearch() {
+    if (!_searchVisible) {
+      return IconButton(
+        icon: const Icon(Icons.search, size: 18),
+        tooltip: '搜索',
+        onPressed: () => setState(() => _searchVisible = true),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      );
+    }
+    return SizedBox(
+      width: 160,
+      height: 34,
+      child: TextField(
+        controller: widget.searchController,
+        autofocus: true,
+        style: const TextStyle(fontSize: 12),
+        textAlignVertical: TextAlignVertical.center,
+        decoration: InputDecoration(
+          hintText: '搜索...',
+          hintStyle: const TextStyle(fontSize: 12),
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.close, size: 14),
+            onPressed: () {
+              widget.searchController.clear();
+              widget.onSearchChanged();
+              setState(() => _searchVisible = false);
+            },
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+          ),
+        ),
+        onChanged: (_) => widget.onSearchChanged(),
+        onSubmitted: (_) => widget.onSearchChanged(),
+      ),
+    );
+  }
+
+  /// 批量屏蔽所有选中条目
+  void _batchBlock() {
+    for (final id in widget.selectedUuuids) {
+      widget.onBlockExpense(id);
+    }
+  }
+
+  /// 批量恢复所有选中条目
+  void _batchUnblock() {
+    for (final id in widget.selectedUuuids) {
+      widget.onUnblockExpense(id);
+    }
+  }
+
+  /// 批量删除按钮 + 确认
+  Widget _batchDeleteBtn() {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.redAccent,
         foregroundColor: Colors.white,
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(6)),
       ),
       icon: const Icon(Icons.delete_outline, size: 16),
-      label: const Text('删除', style: TextStyle(fontSize: 12)),
-      onPressed: () {
-        final exp = widget.expenses.firstWhere(
-          (e) => e['uuuid'] == widget.selectedExpenseUuid,
-          orElse: () => {'title': '未知'},
-        );
-        _showDeleteConfirmation(
-            widget.selectedExpenseUuid!, exp['title']?.toString() ?? '未知');
-      },
+      label: Text('删除(${widget.selectedUuuids.length})',
+          style: const TextStyle(fontSize: 12)),
+      onPressed: () => _showBatchDeleteConfirmation(),
+    );
+  }
+
+  void _showBatchDeleteConfirmation() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white.withValues(alpha: 0.95),
+        title: const Row(children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+          SizedBox(width: 8),
+          Text('确认批量删除？'),
+        ]),
+        content: Text('你确定要删除选中的 ${widget.selectedUuuids.length} 条记录吗？此操作不可逆！'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消', style: TextStyle(color: Colors.black54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              for (final id in widget.selectedUuuids) {
+                widget.onDeleteExpense(id);
+              }
+            },
+            child: const Text('确认删除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -252,15 +405,22 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
               style: TextStyle(color: Colors.black54, fontSize: 14)));
     }
 
-    return SingleChildScrollView(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        // 计算自适应列间距：可用宽度减去固定列宽后均分
+        final totalWidth = constraints.maxWidth;
+        final spacing = (totalWidth > 600) ? ((totalWidth - 500) / 5).clamp(20.0, 60.0) : 20.0;
+        return SingleChildScrollView(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: totalWidth),
+              child: DataTable(
           headingRowColor:
               WidgetStateProperty.all(const Color(0xFFF8FAFC)),
           dataRowMinHeight: 48,
           dataRowMaxHeight: 52,
-          columnSpacing: 20,
+          columnSpacing: spacing,
           showCheckboxColumn: true,
           onSelectAll: (bool? selected) {
             if (selected == true) {
@@ -302,13 +462,13 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
           ],
           rows: displayData.map((expense) {
             final uuuid = expense['uuuid']?.toString() ?? '';
-            final isChecked = widget.selectedUuuids.contains(uuuid);
             final date = expense['incurred_date']?.toString() ?? '-';
             final project = expense['project_name']?.toString() ?? '-';
             final type = expense['expense_type']?.toString() ?? '-';
             final title = expense['title']?.toString() ?? '无事由';
             final amount = (expense['amount'] as num?)?.toDouble() ?? 0;
             final status = expense['status']?.toString() ?? '待开票';
+            final isChecked = widget.selectedUuuids.contains(uuuid);
             final isActive = uuuid == widget.selectedExpenseUuid;
             final statusClr = _statusColor(status);
 
@@ -380,8 +540,11 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
               ],
             );
           }).toList(),
-        ),
-      ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -441,54 +604,46 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // 🔽 状态下拉菜单（全状态多级流转）
+  // 🔽 状态下拉菜单（自由选择，不含已屏蔽，当前状态显示在菜单内，统一颜色UI）
   // ═══════════════════════════════════════════════════════════════════
-  Widget _statusDropdown(String uuuid, String status, Color color) {
-    final allStatuses = ['待开票', '已开票', '待报销', '核销中', '已完结'];
-    final currentIndex = allStatuses.indexOf(status);
-    final nextStatuses = _getNextStatuses(status);
+  static const _statusColors = {
+    '待开票': Colors.orange,
+    '已开票': Colors.green,
+    '待报销': Color(0xFFD97706), // amber.shade700
+    '核销中': Colors.blue,
+    '已完结': Colors.purple,
+    '已屏蔽': Colors.redAccent,
+  };
 
-    if (nextStatuses.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-        child: Text(status,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-      );
-    }
+  Widget _statusDropdown(String uuuid, String status, Color color) {
+    const allStatuses = ['待开票', '已开票', '待报销', '核销中', '已完结'];
 
     return PopupMenuButton<String>(
       offset: const Offset(0, 32),
       padding: EdgeInsets.zero,
       tooltip: '更改状态',
       onSelected: (next) => widget.onUpdateStatus(uuuid, next),
-      itemBuilder: (_) => allStatuses.asMap().entries.map((entry) {
-        final idx = entry.key;
-        final name = entry.value;
-        final isPast = idx < currentIndex;
-        final isCurrent = idx == currentIndex;
+      itemBuilder: (_) => allStatuses.map((name) {
+        final c = _statusColors[name] ?? Colors.grey;
+        final isCurrent = name == status;
         return PopupMenuItem<String>(
           value: name,
           enabled: !isCurrent,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(
-                isCurrent
-                    ? Icons.radio_button_checked
-                    : Icons.circle_outlined,
-                size: 14,
-                color: isCurrent
-                    ? color
-                    : (isPast ? Colors.grey : Colors.blueAccent)),
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+            ),
             const SizedBox(width: 8),
             Text(name,
                 style: TextStyle(
                     fontSize: 12,
                     fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                    color: isCurrent ? color : (isPast ? Colors.grey : Colors.black87))),
-            if (isPast) ...[
-              const Spacer(),
-              const Text('(已过)', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    color: isCurrent ? c : Colors.black87)),
+            if (isCurrent) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.check, size: 14, color: c),
             ],
           ]),
         );
@@ -496,69 +651,27 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(4)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
           Text(status,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-          const SizedBox(width: 3),
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+          const SizedBox(width: 2),
           Icon(Icons.arrow_drop_down, size: 14, color: color),
         ]),
       ),
     );
   }
 
-  List<String> _getNextStatuses(String current) {
-    switch (current) {
-      case '待开票': return ['已开票'];
-      case '已开票': return ['待报销'];
-      case '待报销': return ['核销中'];
-      case '核销中': return ['已完结'];
-      default: return [];
-    }
-  }
-
   Color _statusColor(String status) {
-    switch (status) {
-      case '待开票': return Colors.orange;
-      case '已开票': return Colors.green;
-      case '待报销': return Colors.amber.shade700;
-      case '核销中': return Colors.blue;
-      case '已完结': return Colors.purple;
-      default: return Colors.grey;
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // 🗑️ 删除确认 Dialog
-  // ═══════════════════════════════════════════════════════════════════
-  void _showDeleteConfirmation(String uuuid, String title) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white.withValues(alpha: 0.95),
-        title: const Row(children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
-          SizedBox(width: 8),
-          Text('确认删除流水？'),
-        ]),
-        content:
-            Text('你确定要删除事由为"$title"的这条流水记录吗？此操作不可逆！'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消', style: TextStyle(color: Colors.black54)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              widget.onDeleteExpense(uuuid);
-            },
-            child: const Text('确认删除', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+    return _statusColors[status] ?? Colors.grey;
   }
 
   // ═══════════════════════════════════════════════════════════════════

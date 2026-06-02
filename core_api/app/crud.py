@@ -6,12 +6,14 @@ from loguru import logger
 from app import models, schemas
 
 # ── 状态流转白名单 ──
+# 「已屏蔽」是独立旁路状态：任意非终态可屏蔽，屏蔽后可恢复原状态或删除
 VALID_TRANSITIONS = {
-    "待开票": ["已开票"],
-    "已开票": ["待报销"],
-    "待报销": ["核销中"],
-    "核销中": ["已完结"],
-    "已完结": [],  # 终态，不可再流转
+    "待开票": ["已开票", "已屏蔽"],
+    "已开票": ["待报销", "已屏蔽"],
+    "待报销": ["核销中", "已屏蔽"],
+    "核销中": ["已完结", "已屏蔽"],
+    "已完结": [],       # 终态，不可再流转
+    "已屏蔽": [],       # 屏蔽态：只能取消屏蔽（恢复原状态）或删除，不走正常流转
 }
 
 
@@ -73,20 +75,11 @@ def update_expense(db: Session, uuuid: str, expense_update: schemas.ExpenseUpdat
     # exclude_unset=True 保证前端没传的字段不会覆盖数据库里的原值
     update_data = expense_update.model_dump(exclude_unset=True)
 
-    # ── 状态流转白名单校验 ──
+    # ── 状态流转：不再拦截，允许自由切换任意状态 ──
     if "status" in update_data:
         new_status = update_data["status"]
         current_status = db_expense.status
-        allowed = VALID_TRANSITIONS.get(current_status, [])
-        if new_status not in allowed:
-            logger.warning(
-                "非法状态流转被拒绝 | uuuid={} 当前={} → 请求={} 允许={}",
-                uuuid, current_status, new_status, allowed,
-            )
-            raise ValueError(
-                f"非法的状态流转：不允许从「{current_status}」直接跳转到「{new_status}」。"
-                f"允许的下一状态：{allowed if allowed else '无（已是终态）'}"
-            )
+        logger.info("状态变更 | uuuid={} {} → {}", uuuid, current_status, new_status)
 
     for key, value in update_data.items():
         setattr(db_expense, key, value)
@@ -134,6 +127,44 @@ def delete_expense(db: Session, uuuid: str) -> bool:
         uuuid, db_expense.title, len(invoices), deleted_pdfs,
     )
     return True
+
+def block_expense(db: Session, uuuid: str) -> bool:
+    """屏蔽一条开销记录：记录当前状态后置为「已屏蔽」"""
+    db_expense = get_expense_by_uuuid(db, uuuid)
+    if not db_expense:
+        return False
+    if db_expense.status == "已屏蔽":
+        logger.warning("重复屏蔽 | uuuid={}", uuuid)
+        return False
+
+    db_expense.blocked_from_status = db_expense.status
+    db_expense.status = "已屏蔽"
+    db.commit()
+    db.refresh(db_expense)
+    logger.info("屏蔽开销记录 | uuuid={} 原状态={}", uuuid, db_expense.blocked_from_status)
+    return True
+
+
+def unblock_expense(db: Session, uuuid: str) -> bool:
+    """取消屏蔽：恢复到屏蔽前的原始状态"""
+    db_expense = get_expense_by_uuuid(db, uuuid)
+    if not db_expense:
+        return False
+    if db_expense.status != "已屏蔽":
+        logger.warning("取消屏蔽失败：当前并非屏蔽态 | uuuid={} status={}", uuuid, db_expense.status)
+        return False
+    if not db_expense.blocked_from_status:
+        logger.warning("取消屏蔽失败：缺少原始状态 | uuuid={}", uuuid)
+        return False
+
+    restored = db_expense.blocked_from_status
+    db_expense.status = restored
+    db_expense.blocked_from_status = None
+    db.commit()
+    db.refresh(db_expense)
+    logger.info("取消屏蔽 | uuuid={} 恢复为={}", uuuid, restored)
+    return True
+
 
 def create_invoice(db: Session, expense_uuuid: str, file_name: str, saved_path: str):
     """物理记录一条发票与业务的绑定关系"""
@@ -231,13 +262,18 @@ def get_monthly_trend(db: Session) -> list:
     return [{"month": m, "amount": db_map.get(m, 0.0)} for m in all_months]
 
 
-def get_category_distribution(db: Session) -> list:
-    # 按【报销项目名称 project_name】分组统计
-    # func.coalesce 用于如果 project_name 是空的，就归类为 "无项目"
-    query = db.query(
+def get_category_distribution(db: Session, days: int | None = None) -> list:
+    """按【报销项目名称 project_name】分组统计，可选时间范围筛选"""
+    from datetime import datetime, timedelta
+
+    q = db.query(
         func.coalesce(models.ExpenseRecord.project_name, "通用类目").label('category'),
         func.sum(models.ExpenseRecord.amount).label('total')
-    ).group_by('category').all()
+    )
+    if days is not None:
+        cutoff = (datetime.now() - timedelta(days=days)).date()
+        q = q.filter(models.ExpenseRecord.incurred_date >= cutoff)
+    query = q.group_by('category').all()
 
     total_all = sum(row.total for row in query if row.total) or 1.0
 
@@ -274,14 +310,20 @@ def get_daily_heatmap(db: Session) -> list:
     return [{"date": d, "count": db_map.get(d, 0)} for d in all_days]
 
 
-def get_expense_type_distribution(db: Session) -> list:
-    """按 expense_type 分组统计金额与占比（用于环形图）"""
+def get_expense_type_distribution(db: Session, days: int | None = None) -> list:
+    """按 expense_type 分组统计金额与占比（用于环形图），可选时间范围筛选"""
     logger.info("查询开销类型分布")
 
-    query = db.query(
+    from datetime import datetime, timedelta
+
+    q = db.query(
         func.coalesce(models.ExpenseRecord.expense_type, "未分类").label('category'),
         func.sum(models.ExpenseRecord.amount).label('total')
-    ).group_by('category').all()
+    )
+    if days is not None:
+        cutoff = (datetime.now() - timedelta(days=days)).date()
+        q = q.filter(models.ExpenseRecord.incurred_date >= cutoff)
+    query = q.group_by('category').all()
 
     total_all = sum(row.total for row in query if row.total) or 1.0
 

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from loguru import logger
 
 from app.database import get_db
@@ -24,10 +24,13 @@ def read_monthly_trend(db: Session = Depends(get_db)):
     return crud.get_monthly_trend(db)
 
 @router.get("/distribution", response_model=List[schemas.DistributionItem])
-def read_category_distribution(db: Session = Depends(get_db)):
-    """获取各项报销项目(Project)金额与占比"""
-    logger.info("GET /api/dashboard/distribution")
-    return crud.get_category_distribution(db)
+def read_category_distribution(
+    days: Optional[int] = Query(None, description="时间范围（天数），如 7/30/60/90/365"),
+    db: Session = Depends(get_db),
+):
+    """获取各项报销项目(Project)金额与占比，支持按天数筛选"""
+    logger.info("GET /api/dashboard/distribution | days={}", days)
+    return crud.get_category_distribution(db, days=days)
 
 
 @router.get("/heatmap", response_model=List[schemas.HeatmapItem])
@@ -38,7 +41,10 @@ def read_daily_heatmap(db: Session = Depends(get_db)):
 
 
 @router.get("/type-distribution", response_model=List[schemas.DistributionItem])
-def read_expense_type_distribution(db: Session = Depends(get_db)):
-    """获取各项开销类型(expense_type)金额与占比"""
-    logger.info("GET /api/dashboard/type-distribution")
-    return crud.get_expense_type_distribution(db)
+def read_expense_type_distribution(
+    days: Optional[int] = Query(None, description="时间范围（天数），如 7/30/60/90/365"),
+    db: Session = Depends(get_db),
+):
+    """获取各项开销类型(expense_type)金额与占比，支持按天数筛选"""
+    logger.info("GET /api/dashboard/type-distribution | days={}", days)
+    return crud.get_expense_type_distribution(db, days=days)

@@ -28,10 +28,14 @@ class KpiSummaryCard extends StatelessWidget {
 
     final double yearTotal = (summary['total_amount'] as num).toDouble();
 
+    // 近 30 天累计（替代原"本月累计"）
     final now = DateTime.now();
-    final prefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final cutoff30 = now.subtract(const Duration(days: 30));
+    final cutoffStr =
+        '${cutoff30.year}-${cutoff30.month.toString().padLeft(2, '0')}-${cutoff30.day.toString().padLeft(2, '0')}';
     final double monthTotal = expenses
-        .where((e) => (e['incurred_date']?.toString() ?? '').startsWith(prefix))
+        .where((e) =>
+            (e['incurred_date']?.toString() ?? '').compareTo(cutoffStr) >= 0)
         .fold<double>(0, (sum, e) => sum + (e['amount'] as num).toDouble());
 
     final double pending = (summary['pending_amount'] as num).toDouble();
@@ -80,7 +84,7 @@ class KpiSummaryCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _KpiTile(
-                    title: '本月累计 (元)',
+                    title: '30天累计 (元)',
                     value: monthTotal,
                     isPrivacyHidden: isPrivacyHidden,
                     trend: '↑ 15%',

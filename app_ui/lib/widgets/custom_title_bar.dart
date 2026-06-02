@@ -97,49 +97,30 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
   }
 }
 
-/// 窗口控制按钮 — 使用 [MouseRegion] + [GestureDetector] 替代 [InkWell]，
-/// 消除水波纹动画延迟，实现原生级瞬间响应。
-class _WinBtn extends StatefulWidget {
+/// 窗口控制按钮 — 使用 [InkWell] 实现原生 hover 效果，无 setState 闪烁
+class _WinBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool isClose;
   const _WinBtn(this.icon, this.onTap, {this.isClose = false});
 
   @override
-  State<_WinBtn> createState() => _WinBtnState();
-}
-
-class _WinBtnState extends State<_WinBtn> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
     final onSurface = Theme.of(context).colorScheme.onSurface;
+    final iconColor = isClose ? Colors.redAccent : onSurface;
 
-    // 关闭按钮 hover 时背景变红、图标变白；普通按钮 hover 时半透明底色
-    final Color bgColor;
-    final Color iconColor;
-    if (widget.isClose) {
-      bgColor = _hovered ? Colors.red : Colors.transparent;
-      iconColor = _hovered ? Colors.white : Colors.redAccent;
-    } else {
-      bgColor = _hovered ? Colors.white.withValues(alpha: 0.12) : Colors.transparent;
-      iconColor = onSurface;
-    }
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: 46,
-          height: 40,
-          color: bgColor,
-          child: Center(
-            child: Icon(widget.icon, size: 16, color: iconColor),
-          ),
+    return SizedBox(
+      width: 46,
+      height: double.infinity,
+      child: Tooltip(
+        message: isClose ? '关闭' : (icon == Icons.minimize ? '最小化' : '最大化/还原'),
+        child: InkWell(
+          onTap: onTap,
+          hoverColor:
+              isClose ? Colors.red : Colors.white.withValues(alpha: 0.12),
+          splashColor:
+              isClose ? Colors.red.shade300 : Colors.white.withValues(alpha: 0.2),
+          child: Icon(icon, size: 16, color: iconColor),
         ),
       ),
     );

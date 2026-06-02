@@ -24,12 +24,12 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: BackdropFilter(
-        // sigma 从 16 降至 4 — 视觉效果几乎不变，但 saveLayer 开销大幅降低
-        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-        child: RepaintBoundary(
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: BackdropFilter(
+          // sigma 从 16 降至 4 — 视觉效果几乎不变，但 saveLayer 开销大幅降低
+          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(

@@ -18,6 +18,7 @@ class ExpenseBase(BaseModel):
     project_name: Optional[str] = Field(default=None, description="报销项目名称")
     expense_type: Optional[str] = Field(default=None, description="开销类型（如差旅交通/云服务采购）")
     related_persons: Optional[str] = Field(default=None, description="报销单有关人")
+    blocked_from_status: Optional[str] = Field(default=None, description="被屏蔽前的原始状态（已屏蔽条目专用）")
 
 
 # 1. 创建记录入参校验
@@ -38,6 +39,7 @@ class ExpenseUpdate(BaseModel):
     project_name: Optional[str] = None
     expense_type: Optional[str] = None
     related_persons: Optional[str] = None
+    blocked_from_status: Optional[str] = None
 
 # 3. 向前端返回数据校验：强行要求携带主键 uuuid
 class ExpenseResponse(ExpenseBase):

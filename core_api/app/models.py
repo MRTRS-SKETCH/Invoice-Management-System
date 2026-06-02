@@ -35,6 +35,10 @@ class ExpenseRecord(Base):
     expense_type = Column(String, nullable=True, index=True)   # 开销类型 — group_by 高频列
     related_persons = Column(String, nullable=True)  # 报销单有关人
 
+    # 屏蔽机制：独立旁路状态，不参与正常流转
+    # 屏蔽时记录原状态，取消屏蔽时恢复
+    blocked_from_status = Column(String, nullable=True)  # 被屏蔽前的原始状态
+
 
 class InvoiceRecord(Base):
     __tablename__ = "invoices"

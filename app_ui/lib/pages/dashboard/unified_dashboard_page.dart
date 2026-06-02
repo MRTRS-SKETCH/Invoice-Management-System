@@ -37,7 +37,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   List<dynamic> _selectedInvoices = [];
   int _selectedInvoiceIndex = 0;
 
-  String _analysisTimeRange = '本月';
+  String _analysisTimeRange = '近30天';
+  String? _dateFrom;
+  String? _dateTo;
 
   final TextEditingController _searchController = TextEditingController();
   String? _statusFilter;
@@ -71,16 +73,20 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   // ═══════════════════════════════════════════════════════════════════
 
   Future<void> _fetchAllData() async {
-    setState(() => _isLoading = true);
+    // 仅首次加载时显示 loading 动画，后续刷新静默更新
+    if (_expenses.isEmpty) {
+      setState(() => _isLoading = true);
+    }
     const maxRetries = 3;
 
     for (int attempt = 0; attempt < maxRetries; attempt++) {
       try {
+        final days = DualAnalysisCard.daysFor(_analysisTimeRange);
         final results = await Future.wait([
           ExpenseService.fetchDashboardSummary(),
           ExpenseService.fetchHeatmapData(),
-          ExpenseService.fetchDistributionData(),
-          ExpenseService.fetchTypeDistributionData(),
+          ExpenseService.fetchDistributionData(days: days),
+          ExpenseService.fetchTypeDistributionData(days: days),
           ExpenseService.fetchExpenses(),
         ]);
         if (!mounted) return;
@@ -110,6 +116,8 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
             ? null
             : _searchController.text.trim(),
         status: _statusFilter,
+        dateFrom: _dateFrom,
+        dateTo: _dateTo,
       );
       if (mounted) setState(() => _expenses = data);
     } catch (e) {
@@ -123,7 +131,14 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     try {
       final results = await Future.wait([
         ExpenseService.fetchDashboardSummary(),
-        ExpenseService.fetchExpenses(),
+        ExpenseService.fetchExpenses(
+          search: _searchController.text.trim().isEmpty
+              ? null
+              : _searchController.text.trim(),
+          status: _statusFilter,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        ),
       ]);
       if (!mounted) return;
       setState(() {
@@ -166,6 +181,42 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     setState(() => _selectedUuuids = uuuids);
   }
 
+  Future<void> _onBatchUpdateStatus(
+      Set<String> uuuids, String nextStatus) async {
+    int success = 0;
+    for (final id in uuuids) {
+      try {
+        await ExpenseService.updateExpenseStatus(id, nextStatus);
+        success++;
+      } catch (e) {
+        AppLogger.error('批量更新失败 uuuid=$id', e);
+      }
+    }
+    _snack('批量更新完成: $success / ${uuuids.length} 条');
+    setState(() => _selectedUuuids = {});
+    _refreshSummaryAndExpenses();
+  }
+
+  Future<void> _onBlockExpense(String uuuid) async {
+    try {
+      await ExpenseService.blockExpense(uuuid);
+      _snack('记录已屏蔽');
+      _refreshSummaryAndExpenses();
+    } catch (e) {
+      _snack('屏蔽失败: $e', isError: true);
+    }
+  }
+
+  Future<void> _onUnblockExpense(String uuuid) async {
+    try {
+      await ExpenseService.unblockExpense(uuuid);
+      _snack('已取消屏蔽');
+      _refreshSummaryAndExpenses();
+    } catch (e) {
+      _snack('取消屏蔽失败: $e', isError: true);
+    }
+  }
+
   Future<void> _onUpdateStatus(String uuuid, String nextStatus) async {
     try {
       await ExpenseService.updateExpenseStatus(uuuid, nextStatus);
@@ -195,6 +246,28 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   void _onStatusFilterChanged(String? status) {
     setState(() => _statusFilter = status);
     _fetchExpenses();
+  }
+
+  void _onDateRangeChanged(String? from, String? to) {
+    setState(() {
+      _dateFrom = from;
+      _dateTo = to;
+    });
+    _fetchExpenses();
+  }
+
+  /// 时间范围下拉变更 → 自动联动明细表日期区间
+  void _onTimeRangeChanged(String? range) {
+    if (range == null) return;
+    setState(() => _analysisTimeRange = range);
+    // 根据时间范围自动计算日期区间
+    final dr = DualAnalysisCard.dateRangeFor(range);
+    setState(() {
+      _dateFrom = dr?.from;
+      _dateTo = dr?.to;
+    });
+    // 刷新图表（带 days） + 明细（带日期区间）
+    _fetchAllData();
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -256,8 +329,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              // ── 顶部驾驶舱 ──
-              SizedBox(
+              // ── 顶部驾驶舱 (RepaintBoundary 隔离，避免明细表刷新时重绘图表) ──
+              RepaintBoundary(
+                child: SizedBox(
                 height: 170,
                 child: Row(
                   children: [
@@ -283,21 +357,21 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                         distribution: _distribution,
                         typeDistribution: _typeDistribution,
                         analysisTimeRange: _analysisTimeRange,
-                        onTimeRangeChanged: (v) {
-                          if (v != null) {
-                            setState(() => _analysisTimeRange = v);
-                            _fetchAllData();
-                          }
-                        },
+                        dateFrom: _dateFrom,
+                        dateTo: _dateTo,
+                        onTimeRangeChanged: _onTimeRangeChanged,
+                        onDateRangeChanged: _onDateRangeChanged,
                       ),
                     ),
                   ],
                 ),
-              ),
+                ),
+              ),  // RepaintBoundary
               const SizedBox(height: 16),
-              // ── 下方业务区 ──
+              // ── 下方业务区 (RepaintBoundary 隔离) ──
               Expanded(
-                child: Row(
+                child: RepaintBoundary(
+                  child: Row(
                   children: [
                     Expanded(
                       flex: 65,
@@ -311,6 +385,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                         onSelectRowChanged: _onSelectRow,
                         onMultiSelectChanged: _onMultiSelectChanged,
                         onUpdateStatus: _onUpdateStatus,
+                        onBatchUpdateStatus: _onBatchUpdateStatus,
+                        onBlockExpense: _onBlockExpense,
+                        onUnblockExpense: _onUnblockExpense,
                         onDeleteExpense: _onDeleteExpense,
                         onAddExpenseSubmitted: _refreshSummaryAndExpenses,
                         onStatusFilterChanged: _onStatusFilterChanged,
@@ -331,6 +408,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     ),
                   ],
                 ),
+                ),  // RepaintBoundary
               ),
             ],
           ),
