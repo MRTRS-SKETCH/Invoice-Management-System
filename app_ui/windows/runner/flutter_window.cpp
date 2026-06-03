@@ -27,8 +27,11 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // Defer window visibility to the window_manager plugin.
+  // Native Show() races with window_manager's centering/sizing, causing a
+  // white flash at (10,10) before the window is properly positioned.
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+    // this->Show();  // Disabled -- window_manager.waitUntilReadyToShow handles it
   });
 
   // Flutter can complete the first frame before the "show window" callback is

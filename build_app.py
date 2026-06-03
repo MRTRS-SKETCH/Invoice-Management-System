@@ -77,7 +77,7 @@ def clean_caches():
 
 def build_project():
     print("=" * 60)
-    print("      🚀 财务发票管理系统 - 全自动构建引擎 🚀")
+    print("      🚀 发票管理系统 - 全自动构建引擎 🚀")
     print("=" * 60)
 
     # 0. 先行清理历史缓存
@@ -113,7 +113,7 @@ def build_project():
         RELEASES_DIR.mkdir()
 
     date_str = datetime.now().strftime("%Y%m%d")
-    release_folder_name = f"{date_str}_财务发票管理系统"
+    release_folder_name = f"{date_str}_发票管理系统"
 
     # 【已修正】函数内部的局部变量采用小写加下划线命名规范
     target_dir = RELEASES_DIR / release_folder_name
@@ -129,6 +129,13 @@ def build_project():
 
     print("  ├─ 正在拷贝前端界面资产...")
     shutil.copytree(flutter_build_dir, target_dir, dirs_exist_ok=True)
+
+    # 将 Flutter 构建产出的 exe 重命名为中文名
+    old_exe = target_dir / "invoice_system.exe"
+    new_exe = target_dir / "发票管理系统.exe"
+    if old_exe.exists():
+        old_exe.rename(new_exe)
+        print(f"  ├─ 已重命名: invoice_system.exe → 发票管理系统.exe")
 
     print("  ├─ 正在拷贝并挂载隐形后端引擎...")
     shutil.copytree(nuitka_build_dir, api_server_dir)

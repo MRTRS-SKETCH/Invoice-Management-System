@@ -21,12 +21,8 @@ void main() async {
   // 初始化 window_manager
   await windowManager.ensureInitialized();
 
-  // 🚨 2. 开局自动清场：强杀后台可能残留的旧 main.exe，防止端口冲突
-  await _cleanGhostProcess();
-
-  // 🚀 3. 伴随启动：拉起我们刚刚用 Nuitka 编译出来的独立免安装引擎
-  await _startBackendEngine();
-
+  // ⚡ 立即配置窗口选项 — 必须在任何耗时操作之前，
+  //    防止原生 Win32 窗口在 ensureInitialized 后以默认白色背景闪现
   WindowOptions windowOptions = const WindowOptions(
     size: Size(1024, 768),
     center: true,
@@ -35,16 +31,24 @@ void main() async {
     titleBarStyle: TitleBarStyle.hidden,
     title: '发票管理系统',
   );
-  
+
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
     await windowManager.focus();
   });
 
-  // 🕵️‍♂️ 4. 注册窗口监听器：当用户点击右上角 [X] 关闭软件时，自动杀死后端
+  // 注册窗口关闭监听器
   windowManager.addListener(_WindowCloseListener());
 
+  // 先启动 UI — Dashboard 自带 _isLoading 状态 + 3 次重试机制，
+  // 后端尚未就绪时会显示加载动画，用户体验流畅无白屏
   runApp(const InvoiceSystemApp());
+
+  // 🚨 后台清场：强杀可能残留的旧进程，防止端口冲突
+  await _cleanGhostProcess();
+
+  // 🚀 后台拉起后端引擎（窗口已显示，用户看到加载状态，不会感知启动延迟）
+  await _startBackendEngine();
 }
 
 // 核心函数：未来你要修改启动路径，只需要改这里！
@@ -156,7 +160,7 @@ class InvoiceSystemApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Invoice System',
+      title: '发票管理系统',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey),

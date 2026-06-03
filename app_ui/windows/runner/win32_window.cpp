@@ -97,7 +97,10 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground = 0;
+    // Use a solid background brush matching the Flutter theme to prevent the
+    // default white flash before the first frame is rendered.
+    // RGB(226, 232, 240) == #E2E8F0, matches the app's gradient start color.
+    window_class.hbrBackground = CreateSolidBrush(RGB(226, 232, 240));
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);

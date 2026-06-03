@@ -72,7 +72,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '财务与发票管理系统',
+                    '发票管理系统',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,

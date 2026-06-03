@@ -409,7 +409,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
       ),
       icon: const Icon(Icons.delete_outline, size: 16),
       label: const Text('删除',
-          style: const TextStyle(fontSize: 12)),
+          style: TextStyle(fontSize: 12)),
       onPressed: () => _showBatchDeleteConfirmation(),
     );
   }
@@ -534,7 +534,6 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
             final amount = (expense['amount'] as num?)?.toDouble() ?? 0;
             final status = expense['status']?.toString() ?? '待开票';
             final isChecked = widget.selectedUuuids.contains(uuuid);
-            final isActive = uuuid == widget.selectedExpenseUuid;
             final statusClr = _statusColor(status);
 
             return DataRow(
