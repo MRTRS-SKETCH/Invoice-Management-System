@@ -15,7 +15,7 @@ models.Base.metadata.create_all(bind=engine)
 logger.info("数据库表结构已确认/创建")
 
 # 初始化总应用
-app = FastAPI(title="发票管理系统 API", version="1.1.1")
+app = FastAPI(title="发票管理系统 API", version="1.2.1")
 logger.info("FastAPI 应用实例已创建")
 
 # 本地桌面端无需跨域 —— CORS 中间件已移除
