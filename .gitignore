@@ -149,6 +149,7 @@ tempCodeRunnerFile.py
 .spyproject
 .ropeproject
 .reasonix/
+.codegraph/
 
 # ==========================================
 #

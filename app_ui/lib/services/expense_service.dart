@@ -138,7 +138,7 @@ class ExpenseService {
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
 
-  /// 将本地 PDF 文件绑定到指定流水
+  /// 将本地 PDF 文件绑定到指定流水（手动选定条目模式）
   static Future<bool> bindInvoice(
       String expenseUuuid, String sourceFilePath) async {
     final resp = await http.post(
@@ -152,6 +152,36 @@ class ExpenseService {
     if (resp.statusCode == 201) return true;
     final err = json.decode(utf8.decode(resp.bodyBytes));
     throw Exception(err['detail'] ?? '绑定失败: ${resp.statusCode}');
+  }
+
+  /// 全自动建档模式：不传 expense_uuuid，后端自动解析 PDF 并创建开销记录
+  ///
+  /// [projectName] / [expenseType] 由用户在批量上传前填写，透传给后端。
+  /// 返回后端创建的 InvoiceResponse JSON（含新建 expense_uuuid）
+  static Future<Map<String, dynamic>> bindInvoiceAuto(
+    String sourceFilePath, {
+    String? projectName,
+    String? expenseType,
+  }) async {
+    final body = <String, dynamic>{
+      'source_file_path': sourceFilePath,
+    };
+    if (projectName != null && projectName.isNotEmpty) {
+      body['project_name'] = projectName;
+    }
+    if (expenseType != null && expenseType.isNotEmpty) {
+      body['expense_type'] = expenseType;
+    }
+    final resp = await http.post(
+      Uri.parse('$_base/api/invoices/bind'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(body),
+    );
+    if (resp.statusCode == 201) {
+      return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    }
+    final err = json.decode(utf8.decode(resp.bodyBytes));
+    throw Exception(err['detail'] ?? '自动建档失败: ${resp.statusCode}');
   }
 
   /// 解绑并删除单张发票（含物理 PDF）

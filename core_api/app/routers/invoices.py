@@ -9,6 +9,7 @@ from loguru import logger
 
 from app.database import get_db
 from app import schemas, crud
+from app.utils.invoice_parser import parse_invoice_pdf
 
 router = APIRouter(
     prefix="/api/invoices",
@@ -27,13 +28,8 @@ PDF_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_db)):
     logger.info("POST /api/invoices/bind | 绑定发票请求 | expense_uuuid={} source={}",
                 request.expense_uuuid, request.source_file_path)
-    # 1. 验证对应的“开销记录”是否存在
-    expense = crud.get_expense_by_uuuid(db, request.expense_uuuid)
-    if not expense:
-        logger.warning("绑定发票失败：开销记录不存在 | expense_uuuid={}", request.expense_uuuid)
-        raise HTTPException(status_code=404, detail="未找到对应的开销记录，无法绑定发票")
 
-    # 2. 验证前端传来的本地文件是否存在
+    # ── 1. 验证前端传来的本地文件 ──
     source_path = Path(request.source_file_path)
     if not source_path.exists() or not source_path.is_file():
         logger.warning("绑定发票失败：源文件不存在 | path={}", request.source_file_path)
@@ -43,30 +39,56 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
         logger.warning("绑定发票失败：非PDF文件 | suffix={}", source_path.suffix)
         raise HTTPException(status_code=400, detail="目前仅支持绑定 PDF 格式的文件")
 
-    # 👉 3. 终极命名优化：使用 "流水ID_报销事由_原文件名.pdf"
-    extension = source_path.suffix  # 提取后缀名 (比如 .pdf)
-    base_stem = source_path.stem  # 提取没有后缀的文件原名
+    # ── 2. PDF 智能解析 ──
+    parsed = parse_invoice_pdf(str(source_path))
+    logger.info(
+        "PDF 解析结果 | type={} date={} item={} amount={:.2f}",
+        parsed["invoice_type"], parsed["incurred_date"],
+        parsed["item_name"], parsed["amount"],
+    )
 
-    # 清洗标题中的非法路径字符
+    # ── 3. 双模式：解析开销归属 ──
+    if request.expense_uuuid:
+        # 场景 A：绑定到已有流水 — 验证存在性并更新发票类型
+        expense = crud.get_expense_by_uuuid(db, request.expense_uuuid)
+        if not expense:
+            logger.warning("绑定发票失败：开销记录不存在 | expense_uuuid={}", request.expense_uuuid)
+            raise HTTPException(status_code=404, detail="未找到对应的开销记录，无法绑定发票")
+        if parsed["invoice_type"] != "备注":
+            crud.update_expense_invoice_type(db, request.expense_uuuid, parsed["invoice_type"])
+        mode = "bind"
+    else:
+        # 场景 B：全自动建档 — 用解析结果创建新开销记录
+        expense = crud.create_expense_from_parsed(
+            db=db,
+            title=parsed["item_name"],
+            amount=parsed["amount"],
+            incurred_date=parsed["incurred_date"],
+            invoice_type=parsed["invoice_type"],
+            project_name=request.project_name,
+            expense_type=request.expense_type,
+            remark=parsed.get("remark") or None,
+        )
+        mode = "auto"
+
+    logger.info("发票绑定模式={} | expense_uuuid={}", mode, expense.uuuid)
+
+    # ── 4. 文件命名与物理拷贝（复用原有安全逻辑） ──
+    extension = source_path.suffix
+    base_stem = source_path.stem
+
     safe_title = sub(r'[\\/*?:"<>|]', "", expense.title) if expense.title else "未命名"
-
-    # 预拼接基础名称 (流水ID_报销事由_原文件名)
     raw_base_name = f"{expense.uuuid}_{safe_title}_{base_stem}"
 
-    # 计算并执行安全截断 (最大总长200 - 后缀长度)
     max_length = 200
     allowed_base_length = max_length - len(extension)
-
     if len(raw_base_name) > allowed_base_length:
-        raw_base_name = raw_base_name[:allowed_base_length]  # 超出部分直接咔嚓掉
+        raw_base_name = raw_base_name[:allowed_base_length]
 
-    # 重新组装出绝对安全的文件名
     safe_filename = f"{raw_base_name}{extension}"
-    file_name = source_path.name  # 保持存入数据库的原始 file_name 字段不变
-
+    file_name = source_path.name
     dest_path = PDF_STORAGE_DIR / safe_filename
 
-    # 4. 执行物理拷贝
     try:
         copy2(source_path, dest_path)
         logger.info("发票文件拷贝成功 | src={} → dest={}", source_path, dest_path)
@@ -74,16 +96,15 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
         logger.opt(exception=True).error("发票文件拷贝失败 | src={} → dest={}", source_path, dest_path)
         raise HTTPException(status_code=500, detail=f"底层文件拷贝失败: {str(e)}")
 
-    # 5. 路径写入数据库
+    # ── 5. 发票绑定记录写入数据库 ──
     try:
         saved_path = f"user_data/pdfs/{safe_filename}"
         db_invoice = crud.create_invoice(
             db=db,
-            expense_uuuid=request.expense_uuuid,
+            expense_uuuid=expense.uuuid,
             file_name=file_name,
             saved_path=saved_path
         )
-        # 👉 重点：返回给前端时，动态拼装成系统的绝对物理路径
         return {
             "uuuid": db_invoice.uuuid,
             "expense_uuuid": db_invoice.expense_uuuid,
@@ -91,7 +112,7 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
             "saved_path": str(BASE_DIR / db_invoice.saved_path)
         }
     except Exception as e:
-        logger.opt(exception=True).error("数据库绑定发票记录失败 | expense_uuuid={}", request.expense_uuuid)
+        logger.opt(exception=True).error("数据库绑定发票记录失败 | expense_uuuid={}", expense.uuuid)
         if dest_path.exists():
             remove(dest_path)
             logger.info("已回滚：删除已拷贝的PDF文件 | path={}", dest_path)

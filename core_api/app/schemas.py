@@ -17,6 +17,8 @@ class ExpenseBase(BaseModel):
     has_company_invoice: bool = Field(default=False, description="是否有公司发票")
     project_name: Optional[str] = Field(default=None, description="报销项目名称")
     expense_type: Optional[str] = Field(default=None, description="开销类型（如差旅交通/云服务采购）")
+    invoice_type: Optional[str] = Field(default="备注", description="发票类型：'普票' | '增值票' | '备注'")
+    remark: Optional[str] = Field(default=None, description="发票备注信息（订单号等）")
     related_persons: Optional[str] = Field(default=None, description="报销单有关人")
     blocked_from_status: Optional[str] = Field(default=None, description="被屏蔽前的原始状态（已屏蔽条目专用）")
 
@@ -38,6 +40,8 @@ class ExpenseUpdate(BaseModel):
     has_company_invoice: Optional[bool] = None
     project_name: Optional[str] = None
     expense_type: Optional[str] = None
+    invoice_type: Optional[str] = None
+    remark: Optional[str] = None
     related_persons: Optional[str] = None
     blocked_from_status: Optional[str] = None
 
@@ -54,8 +58,10 @@ class ExpenseResponse(ExpenseBase):
 # --- 发票 PDF 绑定 ---
 # 接收 Flutter 传来的本地物理路径和业务流水ID
 class InvoiceBindRequest(BaseModel):
-    expense_uuuid: str = Field(..., description="要绑定的业务流水主键 uuuid")
+    expense_uuuid: Optional[str] = Field(default=None, description="要绑定的业务流水主键 uuuid（为空时自动建档）")
     source_file_path: str = Field(..., description="Windows系统上的本地物理绝对路径 (如 D:\\Downloads\\fapiao.pdf)")
+    project_name: Optional[str] = Field(default=None, description="开销项目名称（自动建档时可选填入）")
+    expense_type: Optional[str] = Field(default=None, description="开销类型（自动建档时可选填入）")
 
 
 # 返回给前端的渲染数据

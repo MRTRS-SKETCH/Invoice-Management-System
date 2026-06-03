@@ -66,6 +66,72 @@ def create_expense(db: Session, expense: schemas.ExpenseCreate):
     return db_expense
 
 
+def create_expense_from_parsed(
+    db: Session,
+    *,
+    title: str = "自动解析发票建档",
+    amount: float = 0.0,
+    incurred_date: str = "",
+    invoice_type: str = "备注",
+    status: str = "待报销",
+    project_name: str | None = None,
+    expense_type: str | None = None,
+    remark: str | None = None,
+):
+    """从 PDF 解析结果全自动创建开销记录（绕过 Pydantic schema，直接写库）
+
+    Args:
+        title: 开销标题，默认 "自动解析发票建档"
+        amount: 价税合计金额
+        incurred_date: YYYY-MM-DD 格式字符串，解析失败则使用当天
+        invoice_type: '普票' | '增值票' | '备注'
+        status: 初始状态，默认 "待报销"
+        project_name: 开销项目名称
+        expense_type: 开销类型
+        remark: 发票备注（订单号等）
+    """
+    from datetime import date as date_type
+
+    # ── 日期解析：优先用 PDF 提取值，失败回退到当天 ──
+    parsed_date = date_type.today()
+    if incurred_date:
+        try:
+            parsed_date = date_type.fromisoformat(incurred_date)
+        except (ValueError, TypeError):
+            logger.warning("PDF 解析日期无效，回退为当天 | raw={}", incurred_date)
+
+    db_expense = models.ExpenseRecord(
+        title=title,
+        amount=amount,
+        incurred_date=parsed_date,
+        invoice_type=invoice_type,
+        status=status,
+        project_name=project_name,
+        expense_type=expense_type,
+        remark=remark,
+    )
+    db.add(db_expense)
+    db.commit()
+    db.refresh(db_expense)
+    logger.info(
+        "自动建档 | uuuid={} title={} amount={:.2f} date={} invoice_type={} project={} type={}",
+        db_expense.uuuid, db_expense.title, db_expense.amount,
+        db_expense.incurred_date, invoice_type, project_name, expense_type,
+    )
+    return db_expense
+
+
+def update_expense_invoice_type(db: Session, uuuid: str, invoice_type: str) -> bool:
+    """仅更新开销记录的发票类型字段（轻量操作，不触发完整状态校验）"""
+    db_expense = get_expense_by_uuuid(db, uuuid)
+    if not db_expense:
+        return False
+    db_expense.invoice_type = invoice_type
+    db.commit()
+    logger.info("更新发票类型 | uuuid={} invoice_type={}", uuuid, invoice_type)
+    return True
+
+
 def update_expense(db: Session, uuuid: str, expense_update: schemas.ExpenseUpdate):
     """物理局部更新记录 (PATCH 核心逻辑)，含状态流转校验"""
     db_expense = get_expense_by_uuuid(db, uuuid)

@@ -15,7 +15,7 @@ class InvoicePdfPanel extends StatefulWidget {
 
   final ValueChanged<int> onInvoiceIndexChanged;
   final ValueChanged<String> onInvoiceDeleted;
-  final ValueChanged<String> onInvoiceFileDropped;
+  final ValueChanged<List<String>> onInvoiceFilesDropped;
 
   const InvoicePdfPanel({
     super.key,
@@ -24,7 +24,7 @@ class InvoicePdfPanel extends StatefulWidget {
     required this.selectedInvoiceIndex,
     required this.onInvoiceIndexChanged,
     required this.onInvoiceDeleted,
-    required this.onInvoiceFileDropped,
+    required this.onInvoiceFilesDropped,
   });
 
   @override
@@ -132,16 +132,16 @@ class _InvoicePdfPanelState extends State<InvoicePdfPanel> {
       onDragExited: (_) => setState(() => _isDragging = false),
       onDragDone: (details) {
         setState(() => _isDragging = false);
-        if (widget.selectedExpenseUuid == null) {
-          _showSnack('请先在左侧列表中选择一笔业务流水！', isError: true);
+        // 过滤出所有 PDF 文件
+        final pdfPaths = details.files
+            .where((f) => f.path.toLowerCase().endsWith('.pdf'))
+            .map((f) => f.path)
+            .toList();
+        if (pdfPaths.isEmpty) {
+          _showSnack('未检测到 PDF 文件，请拖入 .pdf 格式发票！', isError: true);
           return;
         }
-        final file = details.files.first;
-        if (!file.path.toLowerCase().endsWith('.pdf')) {
-          _showSnack('目前仅支持绑定 PDF 格式的发票！', isError: true);
-          return;
-        }
-        widget.onInvoiceFileDropped(file.path);
+        widget.onInvoiceFilesDropped(pdfPaths);
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),

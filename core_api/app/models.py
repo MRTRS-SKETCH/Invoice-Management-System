@@ -33,6 +33,8 @@ class ExpenseRecord(Base):
     has_company_invoice = Column(Boolean, default=False)  # 是否有公司发票
     project_name = Column(String, nullable=True, index=True)  # 报销项目名称 — group_by 高频列
     expense_type = Column(String, nullable=True, index=True)   # 开销类型 — group_by 高频列
+    invoice_type = Column(String, nullable=True, default="备注")  # 发票类型：'普票' | '增值票' | '备注'
+    remark = Column(String, nullable=True)  # 发票备注信息（订单号等）
     related_persons = Column(String, nullable=True)  # 报销单有关人
 
     # 屏蔽机制：独立旁路状态，不参与正常流转

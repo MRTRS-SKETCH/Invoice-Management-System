@@ -17,6 +17,7 @@ class HeatmapCard extends StatefulWidget {
 class _HeatmapCardState extends State<HeatmapCard> {
   final ScrollController _scrollCtrl = ScrollController();
   bool _didInitialScroll = false;
+  double _lastGridWidth = 0;
 
   @override
   void didUpdateWidget(covariant HeatmapCard oldWidget) {
@@ -26,13 +27,14 @@ class _HeatmapCardState extends State<HeatmapCard> {
     }
   }
 
-  /// 仅在布局稳定后执行一次滚动，避免干扰 GridView 子项布局
-  void _tryScrollToLatest() {
-    if (_didInitialScroll || !_scrollCtrl.hasClients) return;
+  /// 布局稳定后滚动到最新日期（右侧）；容器宽度变化时也重新滚动
+  void _tryScrollToLatest({double gridWidth = 0}) {
+    if (!_scrollCtrl.hasClients) return;
+    if (_didInitialScroll && (gridWidth - _lastGridWidth).abs() < 10) return;
     final max = _scrollCtrl.position.maxScrollExtent;
-    if (max <= 0) return; // 内容尚未撑开，等下一帧
+    if (max <= 0) return; // 内容尚未撑开
     _didInitialScroll = true;
-    // endOfFrame 确保所有子项布局完成后再跳转
+    _lastGridWidth = gridWidth;
     WidgetsBinding.instance.endOfFrame.then((_) {
       if (_scrollCtrl.hasClients && mounted) {
         _scrollCtrl.jumpTo(max);
@@ -66,20 +68,32 @@ class _HeatmapCardState extends State<HeatmapCard> {
                     builder: (ctx, constraints) {
                       // 固定 3 行
                       const rows = 3;
-                      // 在布局完成后滚动到最新日期（右侧）
+                      const spacing = 4.0;
+                      final cellSize =
+                          (constraints.maxHeight - (rows - 1) * spacing) / rows;
+                      final columns =
+                          (widget.heatmap.length / rows).ceil();
+                      final gridWidth = columns * cellSize +
+                          (columns - 1) * spacing;
+                      final fitsInView = gridWidth < constraints.maxWidth;
+
+                      // 每次布局时尝试滚动到最新（右侧）
                       WidgetsBinding.instance
-                          .addPostFrameCallback((_) => _tryScrollToLatest());
-                      return RepaintBoundary(
+                          .addPostFrameCallback((_) => _tryScrollToLatest(gridWidth: gridWidth));
+
+                      final grid = RepaintBoundary(
                         child: GridView.builder(
                           controller: _scrollCtrl,
                           scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
+                          physics: fitsInView
+                              ? const NeverScrollableScrollPhysics()
+                              : const BouncingScrollPhysics(),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: rows,
                             childAspectRatio: 1,
-                            crossAxisSpacing: 4,
-                            mainAxisSpacing: 4,
+                            crossAxisSpacing: spacing,
+                            mainAxisSpacing: spacing,
                           ),
                           itemCount: widget.heatmap.length,
                           itemBuilder: (ctx, i) {
@@ -105,6 +119,19 @@ class _HeatmapCardState extends State<HeatmapCard> {
                           },
                         ),
                       );
+
+                      // 内容不足时右对齐，否则正常滚动
+                      if (fitsInView) {
+                        return Align(
+                          alignment: Alignment.centerRight,
+                          child: SizedBox(
+                            width: gridWidth,
+                            height: constraints.maxHeight,
+                            child: grid,
+                          ),
+                        );
+                      }
+                      return grid;
                     },
                   ),
           ),

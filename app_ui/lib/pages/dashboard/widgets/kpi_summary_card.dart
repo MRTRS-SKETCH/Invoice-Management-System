@@ -3,43 +3,28 @@ import '../../../widgets/glass_card.dart';
 
 /// KPI 汇总卡片 — 2×2 布局 + 隐私切换
 ///
-/// 接收原始数据集合，内部计算四项指标后渲染。
+/// 接收父级预计算的指标值，避免每次 build 遍历 expenses。
 /// 使用 [FittedBox] 包裹每个指标块，确保文本溢出时平滑缩放而非截断。
 class KpiSummaryCard extends StatelessWidget {
-  final List<dynamic> expenses;
-  final Map<String, dynamic> summary;
   final bool isPrivacyHidden;
   final VoidCallback onPrivacyToggle;
+  final double monthTotal;
+  final double pending;
+  final double pendingReimburse;
+  final double yearTotal;
 
   const KpiSummaryCard({
     super.key,
-    required this.expenses,
-    required this.summary,
     required this.isPrivacyHidden,
     required this.onPrivacyToggle,
+    required this.monthTotal,
+    required this.pending,
+    required this.pendingReimburse,
+    required this.yearTotal,
   });
 
   @override
   Widget build(BuildContext context) {
-    // ── 计算指标（原 _buildKpiCard 逻辑）──
-    final double pendingReimburse = expenses
-        .where((e) => e['status'] == '待报销' || e['status'] == '核销中')
-        .fold<double>(0, (sum, e) => sum + (e['amount'] as num).toDouble());
-
-    final double yearTotal = (summary['total_amount'] as num).toDouble();
-
-    // 近 30 天累计（替代原"本月累计"）
-    final now = DateTime.now();
-    final cutoff30 = now.subtract(const Duration(days: 30));
-    final cutoffStr =
-        '${cutoff30.year}-${cutoff30.month.toString().padLeft(2, '0')}-${cutoff30.day.toString().padLeft(2, '0')}';
-    final double monthTotal = expenses
-        .where((e) =>
-            (e['incurred_date']?.toString() ?? '').compareTo(cutoffStr) >= 0)
-        .fold<double>(0, (sum, e) => sum + (e['amount'] as num).toDouble());
-
-    final double pending = (summary['pending_amount'] as num).toDouble();
-
     return GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

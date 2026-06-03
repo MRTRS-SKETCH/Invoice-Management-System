@@ -73,40 +73,38 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   // ═══════════════════════════════════════════════════════════════════
 
   Future<void> _fetchAllData() async {
-    // 仅首次加载时显示 loading 动画，后续刷新静默更新
     if (_expenses.isEmpty) {
       setState(() => _isLoading = true);
     }
-    const maxRetries = 3;
 
-    for (int attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        final days = DualAnalysisCard.daysFor(_analysisTimeRange);
-        final results = await Future.wait([
-          ExpenseService.fetchDashboardSummary(),
-          ExpenseService.fetchHeatmapData(),
-          ExpenseService.fetchDistributionData(days: days),
-          ExpenseService.fetchTypeDistributionData(days: days),
-          ExpenseService.fetchExpenses(),
-        ]);
-        if (!mounted) return;
-        setState(() {
-          _summary = results[0] as Map<String, dynamic>;
-          _heatmap = results[1] as List<dynamic>;
-          _distribution = results[2] as List<dynamic>;
-          _typeDistribution = results[3] as List<dynamic>;
-          _expenses = results[4] as List<dynamic>;
-          _isLoading = false;
-        });
-        return;
-      } catch (e) {
-        AppLogger.error('获取驾驶舱数据失败 (第${attempt + 1}次)', e);
-        if (attempt < maxRetries - 1) {
-          await Future.delayed(const Duration(seconds: 1));
-        }
-      }
+    // ── 第一步：先加载流水列表（最快），立即渲染表格 ──
+    try {
+      final expenses = await ExpenseService.fetchExpenses();
+      if (mounted) setState(() { _expenses = expenses; _isLoading = false; });
+    } catch (e) {
+      AppLogger.error('获取流水列表失败', e);
+      if (mounted) setState(() => _isLoading = false);
     }
-    if (mounted) setState(() => _isLoading = false);
+
+    // ── 第二步：异步加载看板数据（KPI / 热力图 / 分布图），不阻塞 UI ──
+    try {
+      final days = DualAnalysisCard.daysFor(_analysisTimeRange);
+      final results = await Future.wait([
+        ExpenseService.fetchDashboardSummary(),
+        ExpenseService.fetchHeatmapData(),
+        ExpenseService.fetchDistributionData(days: days),
+        ExpenseService.fetchTypeDistributionData(days: days),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _summary = results[0] as Map<String, dynamic>;
+        _heatmap = results[1] as List<dynamic>;
+        _distribution = results[2] as List<dynamic>;
+        _typeDistribution = results[3] as List<dynamic>;
+      });
+    } catch (e) {
+      AppLogger.error('获取看板数据失败', e);
+    }
   }
 
   Future<void> _fetchExpenses() async {
@@ -169,6 +167,15 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   // ═══════════════════════════════════════════════════════════════════
 
   void _onSelectRow(String uuuid) {
+    if (_selectedExpenseUuid == uuuid) {
+      // 点击已选中行 → 取消选中，清空 PDF 面板
+      setState(() {
+        _selectedExpenseUuid = null;
+        _selectedInvoices = [];
+        _selectedInvoiceIndex = 0;
+      });
+      return;
+    }
     setState(() {
       _selectedExpenseUuid = uuuid;
       _selectedInvoices = [];
@@ -178,20 +185,26 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   }
 
   void _onMultiSelectChanged(Set<String> uuuids) {
-    setState(() => _selectedUuuids = uuuids);
+    setState(() {
+      _selectedUuuids = uuuids;
+      if (uuuids.isEmpty || (_selectedExpenseUuid != null && !uuuids.contains(_selectedExpenseUuid))) {
+        _selectedExpenseUuid = null;
+        _selectedInvoices = [];
+        _selectedInvoiceIndex = 0;
+      }
+    });
   }
 
   Future<void> _onBatchUpdateStatus(
       Set<String> uuuids, String nextStatus) async {
-    int success = 0;
-    for (final id in uuuids) {
-      try {
-        await ExpenseService.updateExpenseStatus(id, nextStatus);
-        success++;
-      } catch (e) {
-        AppLogger.error('批量更新失败 uuuid=$id', e);
-      }
-    }
+    final results = await Future.wait(
+      uuuids.map((id) => ExpenseService.updateExpenseStatus(id, nextStatus)
+          .then((_) => true, onError: (e) {
+            AppLogger.error('批量更新失败 uuuid=$id', e);
+            return false;
+          })),
+    );
+    final success = results.where((r) => r).length;
     _snack('批量更新完成: $success / ${uuuids.length} 条');
     setState(() => _selectedUuuids = {});
     _refreshSummaryAndExpenses();
@@ -200,20 +213,16 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   Future<void> _onBlockExpense(String uuuid) async {
     try {
       await ExpenseService.blockExpense(uuuid);
-      _snack('记录已屏蔽');
-      _refreshSummaryAndExpenses();
     } catch (e) {
-      _snack('屏蔽失败: $e', isError: true);
+      AppLogger.error('屏蔽失败 uuuid=$uuuid', e);
     }
   }
 
   Future<void> _onUnblockExpense(String uuuid) async {
     try {
       await ExpenseService.unblockExpense(uuuid);
-      _snack('已取消屏蔽');
-      _refreshSummaryAndExpenses();
     } catch (e) {
-      _snack('取消屏蔽失败: $e', isError: true);
+      AppLogger.error('取消屏蔽失败 uuuid=$uuuid', e);
     }
   }
 
@@ -259,14 +268,12 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   /// 时间范围下拉变更 → 自动联动明细表日期区间
   void _onTimeRangeChanged(String? range) {
     if (range == null) return;
-    setState(() => _analysisTimeRange = range);
-    // 根据时间范围自动计算日期区间
     final dr = DualAnalysisCard.dateRangeFor(range);
     setState(() {
+      _analysisTimeRange = range;
       _dateFrom = dr?.from;
       _dateTo = dr?.to;
     });
-    // 刷新图表（带 days） + 明细（带日期区间）
     _fetchAllData();
   }
 
@@ -279,8 +286,6 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   }
 
   Future<void> _onInvoiceDeleted(String invoiceUuuid) async {
-    setState(() => _selectedInvoiceIndex = -1);
-    await Future.delayed(const Duration(milliseconds: 150));
     try {
       await ExpenseService.deleteInvoice(invoiceUuuid);
       _snack('发票已解绑并删除');
@@ -292,23 +297,117 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     }
   }
 
-  Future<void> _onInvoiceFileDropped(String filePath) async {
-    if (_selectedExpenseUuid == null) {
-      _snack('请先在左侧列表中选择一笔业务流水！', isError: true);
+  Future<void> _onInvoiceFilesDropped(List<String> paths) async {
+    if (_selectedExpenseUuid != null) {
+      // ── 模式 1：绑定到已选中条目（仅取第一个文件） ──
+      try {
+        await ExpenseService.bindInvoice(_selectedExpenseUuid!, paths.first);
+        _snack('发票绑定成功！');
+        _fetchBoundInvoices(_selectedExpenseUuid!);
+      } catch (e) {
+        _snack('绑定失败: $e', isError: true);
+      }
       return;
     }
-    try {
-      await ExpenseService.bindInvoice(_selectedExpenseUuid!, filePath);
-      _snack('发票绑定成功！');
-      _fetchBoundInvoices(_selectedExpenseUuid!);
-    } catch (e) {
-      _snack('绑定失败: $e', isError: true);
+
+    // ── 模式 2：批量全自动建档 — 先收集用户填写的项目/类型 ──
+    if (!mounted) return;
+    final batchInfo = await showDialog<Map<String, String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _BatchInfoDialog(
+        existingProjects: _existingProjectNames,
+        existingTypes: _existingTypeNames,
+      ),
+    );
+    if (batchInfo == null || !mounted) return; // 用户取消了
+
+    // 弹出毛玻璃加载弹窗
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black38,
+      builder: (_) => _BatchUploadDialog(total: paths.length),
+    );
+
+    final projectName = batchInfo['project_name'] ?? '';
+    final expenseType = batchInfo['expense_type'] ?? '';
+
+    int success = 0;
+    int fail = 0;
+    String? firstNewUuid;
+    for (int i = 0; i < paths.length; i++) {
+      try {
+        final result = await ExpenseService.bindInvoiceAuto(
+          paths[i],
+          projectName: projectName.isEmpty ? null : projectName,
+          expenseType: expenseType.isEmpty ? null : expenseType,
+        );
+        firstNewUuid ??= result['expense_uuuid']?.toString();
+        success++;
+      } catch (e) {
+        AppLogger.error('自动建档失败 | file=${paths[i]}', e);
+        fail++;
+      }
     }
+
+    // 关闭加载弹窗
+    if (mounted) Navigator.of(context).pop();
+    _snack('批量导入完成：成功 $success 条，失败 $fail 条');
+    _refreshSummaryAndExpenses();
+
+    // 自动选中第一条新记录，让 PDF 面板立即显示发票
+    if (firstNewUuid != null && mounted) {
+      setState(() => _selectedExpenseUuid = firstNewUuid);
+      _fetchBoundInvoices(firstNewUuid);
+    }
+  }
+
+  List<String> get _existingProjectNames {
+    final names = _expenses
+        .map((e) => e['project_name']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
+    names.sort();
+    return names;
+  }
+
+  List<String> get _existingTypeNames {
+    final types = _expenses
+        .map((e) => e['expense_type']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
+    types.sort();
+    return types;
   }
 
   // ═══════════════════════════════════════════════════════════════════
   // 🏗️ build
   // ═══════════════════════════════════════════════════════════════════
+
+  /// KPI 预计算 getter — 单次遍历提取四项指标，避免在 build 中重复遍历
+  ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) get _kpi {
+    final now = DateTime.now();
+    final cutoff30 = now.subtract(const Duration(days: 30));
+    final cutoffStr =
+        '${cutoff30.year}-${cutoff30.month.toString().padLeft(2, '0')}-${cutoff30.day.toString().padLeft(2, '0')}';
+    double monthTotal = 0;
+    double pendingReimburse = 0;
+    for (final e in _expenses) {
+      final amt = (e['amount'] as num).toDouble();
+      final status = e['status']?.toString() ?? '';
+      if (status == '待报销' || status == '核销中') pendingReimburse += amt;
+      if ((e['incurred_date']?.toString() ?? '').compareTo(cutoffStr) >= 0) monthTotal += amt;
+    }
+    return (
+      monthTotal: monthTotal,
+      pending: (_summary['pending_amount'] as num?)?.toDouble() ?? 0,
+      pendingReimburse: pendingReimburse,
+      yearTotal: (_summary['total_amount'] as num?)?.toDouble() ?? 0,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -338,11 +437,13 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                     Expanded(
                       flex: 25,
                       child: KpiSummaryCard(
-                        expenses: _expenses,
-                        summary: _summary,
                         isPrivacyHidden: _isPrivacyHidden,
                         onPrivacyToggle: () =>
                             setState(() => _isPrivacyHidden = !_isPrivacyHidden),
+                        monthTotal: _kpi.monthTotal,
+                        pending: _kpi.pending,
+                        pendingReimburse: _kpi.pendingReimburse,
+                        yearTotal: _kpi.yearTotal,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -403,7 +504,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                         selectedInvoiceIndex: _selectedInvoiceIndex,
                         onInvoiceIndexChanged: _onInvoiceIndexChanged,
                         onInvoiceDeleted: _onInvoiceDeleted,
-                        onInvoiceFileDropped: _onInvoiceFileDropped,
+                        onInvoiceFilesDropped: _onInvoiceFilesDropped,
                       ),
                     ),
                   ],
@@ -429,5 +530,215 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
     ));
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// 📦 批量上传 Loading 弹窗
+// ═══════════════════════════════════════════════════════════════════
+
+/// 毛玻璃遮罩 + 进度提示，防止批量解析期间用户误操作。
+/// 显示「正在智能解析发票...」并带圆形进度条。
+class _BatchUploadDialog extends StatelessWidget {
+  final int total;
+  const _BatchUploadDialog({required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+          width: 320,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 36),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 48,
+                height: 48,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                '正在智能解析发票...',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '共 $total 张，请勿关闭窗口',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+              ),
+            ],
+          ),
+        ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// 📝 批量建档前 — 开销项目 / 开销类型 配置表单
+// ═══════════════════════════════════════════════════════════════════
+
+class _BatchInfoDialog extends StatefulWidget {
+  final List<String> existingProjects;
+  final List<String> existingTypes;
+  const _BatchInfoDialog({
+    required this.existingProjects,
+    required this.existingTypes,
+  });
+
+  @override
+  State<_BatchInfoDialog> createState() => _BatchInfoDialogState();
+}
+
+class _BatchInfoDialogState extends State<_BatchInfoDialog> {
+  final _projectCtrl = TextEditingController();
+  final _typeCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _projectCtrl.dispose();
+    _typeCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+          width: 400,
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(children: [
+                Icon(Icons.tune, size: 20, color: Colors.indigo.shade600),
+                const SizedBox(width: 8),
+                const Text('批量建档配置',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ]),
+              const SizedBox(height: 8),
+              Text(
+                '以下信息将应用到本次导入的所有发票',
+                style:
+                    TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              ),
+              const SizedBox(height: 20),
+              _buildAutocomplete(
+                '开销项目',
+                Icons.folder_outlined,
+                _projectCtrl,
+                widget.existingProjects,
+              ),
+              const SizedBox(height: 14),
+              _buildAutocomplete(
+                '开销类型',
+                Icons.category_outlined,
+                _typeCtrl,
+                widget.existingTypes,
+                hint: '如：差旅交通 / 云服务采购',
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('跳过',
+                        style: TextStyle(color: Colors.black54)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4F46E5),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).pop({
+                        'project_name': _projectCtrl.text.trim(),
+                        'expense_type': _typeCtrl.text.trim(),
+                      });
+                    },
+                    child: const Text('开始导入'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAutocomplete(
+    String label,
+    IconData icon,
+    TextEditingController ctrl,
+    List<String> options, {
+    String? hint,
+  }) {
+    return Autocomplete<String>(
+      optionsBuilder: (v) {
+        if (v.text.isEmpty) return options;
+        return options
+            .where((o) => o.toLowerCase().contains(v.text.toLowerCase()));
+      },
+      onSelected: (val) => ctrl.text = val,
+      fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
+        controller.text = ctrl.text;
+        return TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          onChanged: (v) => ctrl.text = v,
+          decoration: InputDecoration(
+            labelText: label,
+            prefixIcon: Icon(icon, size: 20),
+            hintText: hint,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
