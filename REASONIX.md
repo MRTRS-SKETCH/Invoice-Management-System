@@ -1,49 +1,42 @@
 # REASONIX.md — 对公报销与发票管理系统
 
-## 技术栈
-- **前端:** Flutter 3.11 (Dart) + Material Design 3 — Windows 桌面应用
+## Stack
+- **前端:** Flutter 3.11+ (Dart), Windows 桌面 — `window_manager`, `fl_chart`, `syncfusion_flutter_pdfviewer`
 - **后端:** FastAPI 0.136 + Uvicorn 0.46 (Python 3)
-- **ORM:** SQLAlchemy 2.0 + `Depends(get_db)` 依赖注入
-- **校验:** Pydantic 2.13 | **日志:** Loguru (后端) + Flutter 批量 HTTP 上报
+- **ORM:** SQLAlchemy 2.0 + `Depends(get_db)` / **校验:** Pydantic 2.13
+- **日志:** Loguru（后端 `{}` 占位符）+ Flutter `logger.dart` HTTP 批量上报
 - **数据库:** SQLite → `core_api/user_data/invoice_system.db`
 
-## 目录结构
-- `app_ui/lib/` — Flutter 页面、`config.dart`、`unified_dashboard_page.dart`、`widgets/`
-- `core_api/main.py` — FastAPI 入口 + Loguru + `Base.metadata.create_all` 建表，监听 `127.0.0.1:18090`
-- `core_api/app/routers/` — `expenses` `invoices` `dashboard` `client_logs`
-- `core_api/app/models.py` — `ExpenseRecord`（含 `project_name`/`expense_type`）/ `InvoiceRecord`，主键 `uuuid`
-- `core_api/app/crud.py` — CRUD + 五段状态机 + 聚合统计 (heatmap/type-distribution/summary/trend)
-- `core_api/app/database.py` — SQLite 引擎 + `Base` + `get_db`
+## Layout
+- `app_ui/lib/main.dart` — Sidecar 启动器 + `CustomTitleBar` + `UnifiedDashboardPage`
+- `app_ui/lib/pages/dashboard/` — `unified_dashboard_page.dart`（编排）+ `widgets/`（5 组件）
+- `app_ui/lib/services/expense_service.dart` — 全部 HTTP 请求（静态方法）
+- `app_ui/lib/widgets/` — `glass_card.dart`（毛玻璃）、`custom_title_bar.dart`
+- `core_api/main.py` — FastAPI 入口 + `Base.metadata.create_all`，监听 `127.0.0.1:18090`
+- `core_api/app/` — `routers/`, `models.py`, `schemas.py`, `crud.py`, `database.py`
+- `build_app.py` — Nuitka 打包脚本
 
-## 常用命令
+## Commands
 ```bash
-cd core_api && python main.py          # 后端 → 127.0.0.1:18090
-cd app_ui && flutter run -d windows    # Flutter 桌面应用
+cd core_api && python main.py           # 后端 → 127.0.0.1:18090
+cd app_ui && flutter run -d windows     # Flutter 桌面应用
+python build_app.py                     # Nuitka 生产打包
 ```
 
-## 编码规范
-- **主键拼写 `uuuid`** — 模型/API 路径/Dart 变量统一使用
+## Conventions
+- **主键拼写 `uuuid`** — 模型/API/Flutter 变量统一，不用 `uuid`
 - **API 前缀** `/api/expenses` `/api/invoices` `/api/dashboard` `/api/client-logs`
-- **状态流转 (5段):** 待开票→已开票→待报销→核销中→已完结，`VALID_TRANSITIONS` 白名单校验
-- **中文优先:** 注释、docstring、API tags、UI 文案
-- **日志:** `from loguru import logger` + `{}` 占位符；异常用 `logger.opt(exception=True).error()`
-- **DB 会话:** `db: Session = Depends(get_db)`，异常分支需 `db.rollback()`
-- **Flutter lint:** `package:flutter_lints/flutter.yaml`
+- **五段状态机:** 待开票→已开票→待报销→核销中→已完结（`VALID_TRANSITIONS` 白名单）
+- **中文优先:** 注释、docstring、API tags、UI 文案均用中文
+- **日志:** `from loguru import logger`；异常用 `logger.opt(exception=True).error()`
+- **DB 异常处理:** `db.rollback()` 必须在 `raise` 之前调用
+- **Flutter 后端地址:** `AppConfig.baseUrl`（`config.dart`），禁止硬编码
+- **Flutter lint:** `flutter_lints/flutter.yaml`；导入用相对路径（`../../services/`）
+- **`Base` 统一来源:** `database.py` 导出，其余模块从 `database` 导入
 
-## Sidecar 架构
-- Flutter 启动 spawn Python 后端：开发用 conda `python.exe main.py`，生产用 Nuitka `main.exe`
-- 启动前 `_cleanGhostProcess()` 通过 `:18090` 强杀残留进程；窗口关闭自动 kill 后端
-
-## 前端（已重构为单页驾驶舱）
-- `unified_dashboard_page.dart` 替代原 NavigationRail 三页签
-- 顶部：KPI(2.5) + 热力图(4.0) + 双维分析(3.5)；下方：DataTable(6.5) + PDF预览(3.5)
-- 毛玻璃卡片：`BackdropFilter` + `white.withValues(alpha:0.75)` + `shadow alpha:0.03`
-- 金额隐私切换、5 段状态按钮、`Autocomplete` 下拉可输入项目/类型
-
-## 注意事项
-- **`Base` 统一来源:** 建表用 `database.py` 的 `Base`，`models.py` 从 `database` 导入
-- **`expense_type` 是新字段:** 旧 DB 需 `ALTER TABLE expenses ADD COLUMN expense_type TEXT;`
-- **级联删除:** `delete_expense` 自动清理关联发票行 + 物理 PDF
-- **PDF 路径:** `saved_path` 相对路径，crud.py 用 `Path(__file__).resolve().parent.parent` 拼绝对路径
-- **自定义标题栏:** `DragToMoveArea` 仅包裹左侧标题，右侧按钮脱离拖拽区避免手势竞技
-- **旧页面保留未删:** `dashboard_page.dart` / `expense_flow_page.dart` / `invoice_manager_page.dart`
+## Watch out for
+- **Sidecar 生命周期:** Flutter 启动自动拉起 Python（conda `python.exe` / Nuitka `main.exe`）；`_cleanGhostProcess()` 端口 `:18090` 强杀残留；窗口关闭自动终止后端
+- **`expense_type` 迁移:** 旧库需 `ALTER TABLE expenses ADD COLUMN expense_type TEXT;`
+- **级联删除:** `delete_expense` 自动清理关联发票行 + 物理 PDF 文件
+- **PDF 路径:** `crud.py` 通过 `Path(__file__).resolve().parent.parent` 拼绝对路径；`saved_path` 存相对路径 `user_data/pdfs/xxx.pdf`
+- **标题栏手势:** `DragToMoveArea` 仅包标题文字，窗口按钮（最小化/关闭）在拖拽区外避免竞技

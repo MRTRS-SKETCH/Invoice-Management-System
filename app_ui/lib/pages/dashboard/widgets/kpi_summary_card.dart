@@ -59,18 +59,15 @@ class KpiSummaryCard extends StatelessWidget {
               GestureDetector(
                 onTap: onPrivacyToggle,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text(
-                    isPrivacyHidden ? '🙈 显示金额' : '👁️ 隐藏金额',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF4F46E5),
-                    ),
+                  child: const Icon(
+                    Icons.monetization_on,
+                    size: 18,
+                    color: Color(0xFFF59E0B),
                   ),
                 ),
               ),
