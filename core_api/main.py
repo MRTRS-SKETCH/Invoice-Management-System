@@ -41,6 +41,39 @@ app.include_router(settings.router)
 logger.info("业务路由已挂载：/api/expenses  /api/invoices  /api/dashboard  /api/client-logs  /api/settings")
 
 if __name__ == "__main__":
-    logger.info("API 服务启动中 — 监听 127.0.0.1:18090")
+    import socket
+    import atexit
+    import os
+    from pathlib import Path as _Path
+
+    # ── 端口自动扫描 ──
+    def _find_available_port(start=18090, max_attempts=20) -> int:
+        for offset in range(max_attempts):
+            port = start + offset
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(('127.0.0.1', port))
+                    return port
+                except OSError:
+                    continue
+        raise RuntimeError(f"无法在 {start}–{start + max_attempts - 1} 范围内找到可用端口")
+
+    port = _find_available_port()
+
+    # ── 写入 PID 和端口号（供前端清场/连接使用）──
+    config_dir = config_manager._CONFIG_DIR  # config/ 目录
+    config_dir.mkdir(parents=True, exist_ok=True)
+    pid_file = config_dir / "backend.pid"
+    port_file = config_dir / "port.txt"
+
+    pid_file.write_text(str(os.getpid()))
+    port_file.write_text(str(port))
+
+    # 正常退出时自动清理 PID 文件（port.txt 保留供清场参考）
+    @atexit.register
+    def _cleanup():
+        pid_file.unlink(missing_ok=True)
+
+    logger.info("API 服务启动中 — 监听 127.0.0.1:{}", port)
     from uvicorn import run
-    run(app, host="127.0.0.1", port=18090)
+    run(app, host="127.0.0.1", port=port)

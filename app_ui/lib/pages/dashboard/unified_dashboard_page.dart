@@ -7,6 +7,7 @@ import 'widgets/dual_analysis_card.dart';
 import 'widgets/expense_table_panel.dart';
 import 'widgets/invoice_pdf_panel.dart';
 import '../../logger.dart';
+import '../../main.dart' show backendReady;
 
 /// 单页融合财务驾驶舱 — 骨架编排页 (Orchestrator)
 ///
@@ -50,7 +51,17 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   @override
   void initState() {
     super.initState();
-    _fetchAllData();
+    // 延迟启动：等待后端 HTTP 服务完全就绪后再发请求
+    _initAfterBackendReady();
+  }
+
+  Future<void> _initAfterBackendReady() async {
+    try {
+      await backendReady;
+    } catch (_) {
+      // 后端启动失败或超时 — 仍然尝试请求（让用户看到错误而非空白）
+    }
+    if (mounted) _fetchAllData();
   }
 
   @override

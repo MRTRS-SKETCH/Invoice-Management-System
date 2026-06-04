@@ -245,16 +245,12 @@ def _prebuild_structure(db_path: str, log_path: str) -> None:
         dp = Path(db_path)
         dp.mkdir(parents=True, exist_ok=True)
         (dp / "pdfs").mkdir(parents=True, exist_ok=True)
-        # 写 .placeholder 让资源管理器显示非空文件夹
-        (dp / ".placeholder").touch(exist_ok=True)
-        (dp / "pdfs" / ".placeholder").touch(exist_ok=True)
     except Exception as e:
         logger.warning("预建数据库目录失败 | path={} error={}", db_path, e)
 
     try:
         lp = Path(log_path)
         lp.mkdir(parents=True, exist_ok=True)
-        (lp / ".placeholder").touch(exist_ok=True)
     except Exception as e:
         logger.warning("预建日志目录失败 | path={} error={}", log_path, e)
 

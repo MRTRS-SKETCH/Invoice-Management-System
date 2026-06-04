@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/expense_service.dart';
@@ -23,6 +24,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   bool _saving = false;
   bool _restarting = false;
   String? _error;
+  Timer? _debounce;
 
   // 当前实际配置（从后端加载）
   String? _currentDbPath;
@@ -43,6 +45,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _dbController.removeListener(_onPathChanged);
     _logController.removeListener(_onPathChanged);
     _dbController.dispose();
@@ -67,7 +70,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   void _onPathChanged() {
-    _updatePreview();
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      _updatePreview();
+    });
   }
 
   /// 防抖：用户输入 400ms 后刷新预览
@@ -250,6 +256,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                     hint: 'invoice_system.db 存放目录',
                     controller: _dbController,
                     onPick: () => _pickDirectory(_dbController),
+                    readOnly: true,
                   ),
                   if (_dbPreview.isNotEmpty) _buildPreviewTree(_dbPreview, _dbController.text.trim()),
 
@@ -261,6 +268,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                     hint: 'app.log 存放目录',
                     controller: _logController,
                     onPick: () => _pickDirectory(_logController),
+                    readOnly: true,
                   ),
                   if (_logPreview.isNotEmpty) _buildPreviewTree(_logPreview, _logController.text.trim()),
 
@@ -386,12 +394,14 @@ class _PathRow extends StatelessWidget {
   final String hint;
   final TextEditingController controller;
   final VoidCallback onPick;
+  final bool readOnly;
 
   const _PathRow({
     required this.label,
     required this.hint,
     required this.controller,
     required this.onPick,
+    this.readOnly = false,
   });
 
   @override
@@ -414,7 +424,8 @@ class _PathRow extends StatelessWidget {
             Expanded(
               child: TextField(
                 controller: controller,
-                style: const TextStyle(fontSize: 12),
+                readOnly: readOnly,
+                style: TextStyle(fontSize: 12, color: readOnly ? theme.colorScheme.onSurface.withValues(alpha: 0.55) : null),
                 decoration: InputDecoration(
                   hintText: hint,
                   hintStyle: const TextStyle(fontSize: 11),
