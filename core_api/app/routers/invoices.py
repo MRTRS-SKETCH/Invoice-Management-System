@@ -9,6 +9,7 @@ from loguru import logger
 
 from app.database import get_db
 from app import schemas, crud
+from app import config_manager
 from app.utils.invoice_parser import parse_invoice_pdf
 
 router = APIRouter(
@@ -16,12 +17,16 @@ router = APIRouter(
     tags=["发票与 PDF (Invoices)"]
 )
 
-# 📍 魔法锚点：获取 core_api 目录绝对路径
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-PDF_STORAGE_DIR = BASE_DIR / "user_data" / "pdfs"
 
-# 确保安全的本地物理存储目录存在
-PDF_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+def _build_saved_path(filename: str, shard: int) -> str:
+    """构建存入数据库的相对路径（相对于 config db_path）。
+    
+    格式: pdfs/filename.pdf (shard=0) 或 pdfs_1/filename.pdf (shard>=1)
+    """
+    if shard == 0:
+        return f"pdfs/{filename}"
+    else:
+        return f"pdfs_{shard}/{filename}"
 
 
 @router.post("/bind", response_model=schemas.InvoiceResponse, status_code=status.HTTP_201_CREATED)
@@ -49,7 +54,6 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
 
     # ── 3. 双模式：解析开销归属 ──
     if request.expense_uuuid:
-        # 场景 A：绑定到已有流水 — 验证存在性并更新发票类型
         expense = crud.get_expense_by_uuuid(db, request.expense_uuuid)
         if not expense:
             logger.warning("绑定发票失败：开销记录不存在 | expense_uuuid={}", request.expense_uuuid)
@@ -58,7 +62,6 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
             crud.update_expense_invoice_type(db, request.expense_uuuid, parsed["invoice_type"])
         mode = "bind"
     else:
-        # 场景 B：全自动建档 — 用解析结果创建新开销记录
         expense = crud.create_expense_from_parsed(
             db=db,
             title=parsed["item_name"],
@@ -73,7 +76,7 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
 
     logger.info("发票绑定模式={} | expense_uuuid={}", mode, expense.uuuid)
 
-    # ── 4. 文件命名与物理拷贝（复用原有安全逻辑） ──
+    # ── 4. 文件命名 + 分片目录确定 ──
     extension = source_path.suffix
     base_stem = source_path.stem
 
@@ -87,7 +90,12 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
 
     safe_filename = f"{raw_base_name}{extension}"
     file_name = source_path.name
-    dest_path = PDF_STORAGE_DIR / safe_filename
+
+    # 获取当前 PDF 存储目录（自动处理分片）
+    pdf_dir = config_manager.next_pdf_shard_if_needed()
+    cfg = config_manager.load_config()
+    current_shard = cfg.get("current_pdf_shard", 0)
+    dest_path = pdf_dir / safe_filename
 
     try:
         copy2(source_path, dest_path)
@@ -98,18 +106,19 @@ def bind_invoice(request: schemas.InvoiceBindRequest, db: Session = Depends(get_
 
     # ── 5. 发票绑定记录写入数据库 ──
     try:
-        saved_path = f"user_data/pdfs/{safe_filename}"
+        saved_path = _build_saved_path(safe_filename, current_shard)
         db_invoice = crud.create_invoice(
             db=db,
             expense_uuuid=expense.uuuid,
             file_name=file_name,
             saved_path=saved_path
         )
+        abs_path = config_manager.resolve_absolute_pdf_path(saved_path)
         return {
             "uuuid": db_invoice.uuuid,
             "expense_uuuid": db_invoice.expense_uuuid,
             "file_name": db_invoice.file_name,
-            "saved_path": str(BASE_DIR / db_invoice.saved_path)
+            "saved_path": str(abs_path)
         }
     except Exception as e:
         logger.opt(exception=True).error("数据库绑定发票记录失败 | expense_uuuid={}", expense.uuuid)
@@ -125,13 +134,12 @@ def get_expense_invoices(expense_uuuid: str, db: Session = Depends(get_db)):
     invoices = crud.get_invoices_by_expense(db, expense_uuuid)
     result = []
     for inv in invoices:
-        # 👉 重点：查询时也转换为绝对物理路径交还给前端渲染
-        abs_path = str(BASE_DIR / inv.saved_path)
+        abs_path = config_manager.resolve_absolute_pdf_path(inv.saved_path)
         result.append({
             "uuuid": inv.uuuid,
             "expense_uuuid": inv.expense_uuuid,
             "file_name": inv.file_name,
-            "saved_path": abs_path
+            "saved_path": str(abs_path)
         })
     return result
 

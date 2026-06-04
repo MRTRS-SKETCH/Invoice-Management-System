@@ -103,3 +103,39 @@ class HeatmapItem(BaseModel):
 class ClientLogEntry(BaseModel):
     level: str = Field(..., description="日志级别：INFO / WARNING / ERROR")
     message: str = Field(..., description="日志内容")
+
+# ── 设置 / 路径管理 ──
+class SettingsPathsResponse(BaseModel):
+    db_path: str = Field(..., description="数据库目录绝对路径")
+    log_path: str = Field(..., description="日志目录绝对路径")
+    pdf_path: str = Field(..., description="当前 PDF 存储目录（只读，跟随数据库路径）")
+    current_pdf_shard: int = Field(default=0, description="当前 PDF 分片编号")
+    shard_file_count: int = Field(default=0, description="当前分片文件数")
+
+
+class SettingsPathsUpdate(BaseModel):
+    db_path: str = Field(..., description="新的数据库目录绝对路径")
+    log_path: str = Field(..., description="新的日志目录绝对路径")
+
+
+class SettingsValidateResult(BaseModel):
+    valid: bool
+    error: Optional[str] = None
+
+
+class SettingsPreviewRequest(BaseModel):
+    db_path: str = Field(..., description="预览目标数据库目录")
+    log_path: str = Field(..., description="预览目标日志目录")
+
+
+class SettingsPreviewResponse(BaseModel):
+    db_path: str
+    log_path: str
+    pdf_path: str
+    db_structure: List[str] = Field(default_factory=list, description="数据库目录将创建的文件/文件夹清单")
+    log_structure: List[str] = Field(default_factory=list, description="日志目录将创建的文件/文件夹清单")
+
+
+class SettingsRestartResponse(BaseModel):
+    action: str = Field(default="restart", description="前端应执行的操作")
+    message: str = Field(default="请杀死后端进程并重新拉起", description="提示信息")

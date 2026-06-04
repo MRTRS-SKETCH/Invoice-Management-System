@@ -1,15 +1,60 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'pages/dashboard/unified_dashboard_page.dart';
 import 'package:flutter/foundation.dart';
 import 'logger.dart';
+import 'config.dart';
 import 'widgets/custom_title_bar.dart';
 
 // 1. 全局持有后端二进制文件的进程句柄
 Process? _backendProcess;
+
+/// 全局重启回调：settings_dialog 保存路径后调用，触发 Sidecar 重启
+Future<bool> restartBackend() async {
+  AppLogger.info('【Sidecar】收到重启请求，准备重新拉起后端引擎...');
+
+  // 1. 杀死旧进程
+  if (_backendProcess != null) {
+    _backendProcess!.kill();
+    AppLogger.info('【Sidecar】已杀死旧后端进程 PID=${_backendProcess!.pid}');
+    _backendProcess = null;
+  }
+
+  // 2. 短暂等待端口释放
+  await Future.delayed(const Duration(milliseconds: 800));
+
+  // 3. 重新启动
+  await _startBackendEngine();
+
+  // 4. 等待后端就绪
+  return await _waitForBackendReady();
+}
+
+/// 健康检查轮询：每 500ms 请求一次，最多等 15 秒
+Future<bool> _waitForBackendReady() async {
+  final sw = Stopwatch()..start();
+  while (sw.elapsedMilliseconds < 15000) {
+    try {
+      final resp = await http
+          .get(Uri.parse('${AppConfig.baseUrl}/api/dashboard/summary'))
+          .timeout(const Duration(seconds: 2));
+      if (resp.statusCode == 200) {
+        AppLogger.info('【Sidecar】后端就绪，耗时=${sw.elapsedMilliseconds}ms');
+        return true;
+      }
+    } catch (_) {
+      // 后端尚未就绪，继续等待
+    }
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
+  AppLogger.error('【Sidecar】等待后端就绪超时 (15s)');
+  return false;
+}
 
 void main() async {
   // 必须确保 Flutter 绑定初始化，才能与原生系统通信

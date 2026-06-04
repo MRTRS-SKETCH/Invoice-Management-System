@@ -1,9 +1,8 @@
 import os
-from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from loguru import logger
-from app import models, schemas
+from app import models, schemas, config_manager
 
 # ── 状态流转白名单 ──
 # 「已屏蔽」是独立旁路状态：任意非终态可屏蔽，屏蔽后可恢复原状态或删除
@@ -169,13 +168,10 @@ def delete_expense(db: Session, uuuid: str) -> bool:
     # 1. 查询关联的所有发票记录
     invoices = db.query(models.InvoiceRecord).filter_by(expense_uuuid=uuuid).all()
 
-    # 2. 构造 PDF 存储目录的绝对路径
-    base_dir = Path(__file__).resolve().parent.parent  # core_api/
-
-    # 3. 逐条删除发票：先删物理文件，再删数据库记录
+    # 2. 逐条删除发票：先删物理文件，再删数据库记录
     deleted_pdfs = 0
     for inv in invoices:
-        pdf_path = base_dir / inv.saved_path
+        pdf_path = config_manager.resolve_absolute_pdf_path(inv.saved_path)
         try:
             if pdf_path.exists() and pdf_path.is_file():
                 os.remove(pdf_path)
@@ -265,8 +261,7 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
         logger.warning("尝试删除不存在的发票 | uuuid={}", uuuid)
         return False
 
-    base_dir = Path(__file__).resolve().parent.parent
-    pdf_path = base_dir / db_invoice.saved_path
+    pdf_path = config_manager.resolve_absolute_pdf_path(db_invoice.saved_path)
     try:
         if pdf_path.exists() and pdf_path.is_file():
             os.remove(pdf_path)

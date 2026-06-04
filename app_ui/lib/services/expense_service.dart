@@ -193,6 +193,63 @@ class ExpenseService {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // ⚙️ 设置
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// 获取当前路径配置
+  static Future<Map<String, dynamic>> fetchSettingsPaths() async {
+    final resp = await http.get(Uri.parse('$_base/api/settings/paths'));
+    _ensureSuccess(resp);
+    return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 更新数据库/日志路径（需重启生效）
+  static Future<Map<String, dynamic>> updateSettingsPaths(
+      String dbPath, String logPath) async {
+    final resp = await http.put(
+      Uri.parse('$_base/api/settings/paths'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'db_path': dbPath, 'log_path': logPath}),
+    );
+    if (resp.statusCode == 200) {
+      return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    }
+    final err = json.decode(utf8.decode(resp.bodyBytes));
+    throw Exception(err['detail'] ?? '更新失败: ${resp.statusCode}');
+  }
+
+  /// 预览校验路径（不保存）
+  static Future<Map<String, dynamic>> validatePaths(
+      String dbPath, String logPath) async {
+    final resp = await http.post(
+      Uri.parse('$_base/api/settings/validate'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'db_path': dbPath, 'log_path': logPath}),
+    );
+    _ensureSuccess(resp);
+    return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 预览目录结构（不实际创建）
+  static Future<Map<String, dynamic>> previewPaths(
+      String dbPath, String logPath) async {
+    final resp = await http.post(
+      Uri.parse('$_base/api/settings/preview'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'db_path': dbPath, 'log_path': logPath}),
+    );
+    _ensureSuccess(resp);
+    return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// 请求后端重启信号
+  static Future<Map<String, dynamic>> requestRestart() async {
+    final resp = await http.post(Uri.parse('$_base/api/settings/restart'));
+    _ensureSuccess(resp);
+    return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // 🔧 内部工具
   // ═══════════════════════════════════════════════════════════════════
 

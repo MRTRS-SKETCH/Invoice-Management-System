@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import 'settings_dialog.dart';
 
 /// 沉浸式自定义标题栏 — 替代 Windows 原生标题栏，支持拖拽移动 + 最小化/最大化/关闭
 ///
@@ -71,13 +72,26 @@ class _CustomTitleBarState extends State<CustomTitleBar> with WindowListener {
                 padding: const EdgeInsets.only(left: 16),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    '发票管理系统',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: onSurface,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 设置齿轮按钮
+                      _SettingsBtn(
+                        onTap: () => showDialog(
+                          context: context,
+                          builder: (_) => const SettingsDialog(),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '发票管理系统',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: onSurface,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -121,6 +135,30 @@ class _WinBtn extends StatelessWidget {
           splashColor:
               isClose ? Colors.red.shade300 : Colors.white.withValues(alpha: 0.2),
           child: Icon(icon, size: 16, color: iconColor),
+        ),
+      ),
+    );
+  }
+}
+
+/// 设置按钮 — 齿轮图标，点击弹出路径设置对话框
+class _SettingsBtn extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SettingsBtn({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
+    return Tooltip(
+      message: '路径设置',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        hoverColor: Colors.white.withValues(alpha: 0.12),
+        child: Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: Icon(Icons.settings, size: 14, color: onSurface.withValues(alpha: 0.6)),
         ),
       ),
     );
