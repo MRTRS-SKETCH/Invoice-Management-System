@@ -2,13 +2,34 @@ import subprocess
 import shutil
 import sys
 from pathlib import Path
-from datetime import datetime
+import re
+import platform
 
 # 全局常量定义 (保持大写)
 ROOT_DIR = Path(__file__).parent.resolve()
 CORE_API_DIR = ROOT_DIR / "core_api"
 APP_UI_DIR = ROOT_DIR / "app_ui"
 RELEASES_DIR = ROOT_DIR / "Releases"
+
+
+def get_app_version():
+    """从 core_api/main.py 的 FastAPI 实例中提取版本号"""
+    main_py = CORE_API_DIR / "main.py"
+    if not main_py.exists():
+        print(f"⚠️  找不到 {main_py}，使用默认版本号 0.0.0")
+        return "0.0.0"
+    content = main_py.read_text(encoding="utf-8")
+    match = re.search(r'version="(\d+\.\d+\.\d+)"', content)
+    if match:
+        return match.group(1)
+    print("⚠️  未能从 main.py 提取版本号，使用默认版本号 0.0.0")
+    return "0.0.0"
+
+
+def get_os_name():
+    """动态获取当前操作系统名称（首字母大写）"""
+    name = platform.system()
+    return name.capitalize()
 
 
 def run_command(command, cwd, step_name):
@@ -88,6 +109,10 @@ def build_project():
         sys.executable, "-m", "nuitka",
         "--standalone",
         "--windows-console-mode=disable",
+        "--show-progress",
+        # "--show-scons",  # 实时日志打印
+        "--lto=yes",                         # 开启链路优化
+        "--remove-output",                   # 编译完成后清除缓存
         "--include-package=uvicorn",
         "--include-package=sqlalchemy",
         "--include-package=pydantic",
@@ -112,14 +137,15 @@ def build_project():
     if not RELEASES_DIR.exists():
         RELEASES_DIR.mkdir()
 
-    date_str = datetime.now().strftime("%Y%m%d")
-    release_folder_name = f"{date_str}_发票管理系统"
+    # 动态生成目录名: Invoice-Management-System-v1.2.1-Windows
+    version = get_app_version()
+    os_name = get_os_name()
+    release_folder_name = f"{ROOT_DIR.name}-v{version}-{os_name}"
 
-    # 【已修正】函数内部的局部变量采用小写加下划线命名规范
     target_dir = RELEASES_DIR / release_folder_name
 
     if target_dir.exists():
-        print(f"  ├─ 发现今日已有同名打包文件夹，正在覆写: {release_folder_name}...")
+        print(f"  ├─ 发现同名打包文件夹，正在覆写: {release_folder_name}...")
         shutil.rmtree(target_dir)
     target_dir.mkdir()
 
@@ -140,9 +166,17 @@ def build_project():
     print("  ├─ 正在拷贝并挂载隐形后端引擎...")
     shutil.copytree(nuitka_build_dir, api_server_dir)
 
+    # 4. 生成 zip 压缩包
+    print("\n[4/4] 📦 正在压缩为 .zip 归档...")
+    zip_base = str(target_dir)
+    shutil.make_archive(zip_base, "zip", RELEASES_DIR, release_folder_name)
+    zip_path = f"{zip_base}.zip"
+    print(f"  ├─ ✅ 已生成: {zip_path}")
+
     print("=" * 60)
     print(f"🎉 恭喜！自动化打包圆满成功！")
     print(f"📂 你的软件已生成在: {target_dir}")
+    print(f"📦 压缩包已生成在: {zip_path}")
     print("=" * 60)
 
 
