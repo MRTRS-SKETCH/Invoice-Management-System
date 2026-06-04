@@ -1,7 +1,11 @@
 import subprocess
 import shutil
 import sys
+import hashlib
+import json
+from base64 import b64encode
 from pathlib import Path
+from datetime import datetime
 import re
 import platform
 
@@ -71,15 +75,103 @@ def run_command(command, cwd, step_name):
         print(f"\n❌ [{step_name}] 发生未知异常: {e}")
         sys.exit(1)
 
+def _generate_hash_manifest(target_dir):
+    """遍历安装目录，生成所有程序文件的 SHA256 清单。
+    
+    排除: api_server/config/, api_server/user_data/, api_server/logs/
+    返回 JSON 字符串。
+    """
+    print("  ├─ 正在扫描文件并计算 SHA256...")
+    target = Path(target_dir)
+    # 排除的目录（相对于 target_dir）
+    exclude_dirs = {
+        "api_server/config",
+        "api_server/user_data", 
+        "api_server/logs",
+    }
+    
+    files_manifest = {}
+    total = 0
+    for fp in sorted(target.rglob("*")):
+        if not fp.is_file():
+            continue
+        rel = str(fp.relative_to(target)).replace("\\", "/")
+        # 跳过排除目录
+        excluded = False
+        for ed in exclude_dirs:
+            if rel.startswith(ed + "/") or rel == ed:
+                excluded = True
+                break
+        if excluded:
+            continue
+        
+        # 计算 SHA256
+        h = hashlib.sha256()
+        with open(fp, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        files_manifest[rel] = h.hexdigest()
+        total += 1
+    
+    manifest = {
+        "files": files_manifest,
+        "generated_at": datetime.now().isoformat(),
+        "total_files": total,
+    }
+    print(f"  ├─ 已扫描 {total} 个程序文件")
+    return json.dumps(manifest, ensure_ascii=False)
+
+
+def _compile_integrity_checker(target_dir, manifest_json):
+    """将 base64 编码的清单注入模板并用 Nuitka 编译为 完整性校验.exe"""
+    template_path = ROOT_DIR / "integrity_checker.py"
+    if not template_path.exists():
+        print("\\n❌ 找不到模板文件: integrity_checker.py")
+        sys.exit(1)
+    
+    # 读取模板
+    template = template_path.read_text(encoding="utf-8")
+    manifest_b64 = b64encode(manifest_json.encode("utf-8")).decode("ascii")
+    
+    # 注入清单
+    injected = template.replace('"{{MANIFEST_B64}}"', f'"{manifest_b64}"')
+    
+    # 写入临时文件
+    tmp_py = ROOT_DIR / "_integrity_checker_build.py"
+    tmp_py.write_text(injected, encoding="utf-8")
+    
+    print("  ├─ 正在用 Nuitka 编译 完整性校验.exe（--onefile）...")
+    cmd = [
+        sys.executable, "-m", "nuitka",
+        "--onefile",
+        "--windows-console-mode=disable",
+        "--output-dir=build_ic",
+        "--remove-output",
+        str(tmp_py)
+    ]
+    run_command(cmd, cwd=ROOT_DIR, step_name="Nuitka 编译完整性校验工具")
+    
+    # 拷贝产物
+    src_exe = ROOT_DIR / "build_ic" / "_integrity_checker_build.exe"
+    dest_exe = Path(target_dir) / "完整性校验.exe"
+    shutil.copy2(src_exe, dest_exe)
+    print(f"  ├─ ✅ 完整性校验工具已生成: 完整性校验.exe")
+    
+    # 清理
+    tmp_py.unlink(missing_ok=True)
+    shutil.rmtree(ROOT_DIR / "build_ic", ignore_errors=True)
+
+
 
 def clean_caches():
     """清理上一次打包留下的所有中间缓存"""
-    print("\n[0/3] 🧹 正在清理旧版本的中间缓存...")
+    print("\n[0/4] 🧹 正在清理旧版本的中间缓存...")
 
     caches_to_clean = [
         CORE_API_DIR / "build_out",
         CORE_API_DIR / "main.build",
         CORE_API_DIR / "main.dist",
+        ROOT_DIR / "build_ic",
         APP_UI_DIR / "build",
         APP_UI_DIR / ".dart_tool",
     ]
@@ -109,8 +201,7 @@ def build_project():
         sys.executable, "-m", "nuitka",
         "--standalone",
         "--windows-console-mode=disable",
-        "--show-progress",
-        # "--show-scons",  # 实时日志打印
+        "--show-scons",  # 实时日志打印
         "--lto=yes",                         # 开启链路优化
         "--remove-output",                   # 编译完成后清除缓存
         "--include-package=uvicorn",
@@ -120,7 +211,7 @@ def build_project():
         "--output-dir=build_out",
         "main.py"
     ]
-    run_command(nuitka_cmd, cwd=CORE_API_DIR, step_name="1/3 编译后端独立引擎")
+    run_command(nuitka_cmd, cwd=CORE_API_DIR, step_name="1/4 编译后端独立引擎")
 
     # 2. 编译 Flutter 前端
     flutter_exe = shutil.which("flutter")
@@ -129,10 +220,10 @@ def build_project():
         sys.exit(1)
 
     flutter_cmd = [flutter_exe, "build", "windows"]
-    run_command(flutter_cmd, cwd=APP_UI_DIR, step_name="2/3 编译 Flutter 桌面端")
+    run_command(flutter_cmd, cwd=APP_UI_DIR, step_name="2/4 编译 Flutter 桌面端")
 
     # 3. 拼装终极产物
-    print("\n[3/3] 📦 正在拼装终极完全体文件夹...")
+    print("\n[3/4] 📦 正在拼装终极完全体文件夹...")
 
     if not RELEASES_DIR.exists():
         RELEASES_DIR.mkdir()
@@ -167,16 +258,23 @@ def build_project():
     shutil.copytree(nuitka_build_dir, api_server_dir)
 
     # 4. 生成 zip 压缩包
-    print("\n[4/4] 📦 正在压缩为 .zip 归档...")
+    print("\n[4/5] 📦 正在压缩为 .zip 归档...")
     zip_base = str(target_dir)
     shutil.make_archive(zip_base, "zip", RELEASES_DIR, release_folder_name)
     zip_path = f"{zip_base}.zip"
     print(f"  ├─ ✅ 已生成: {zip_path}")
 
+    # 5. 生成完整性校验工具
+    print("\\n[5/5] 🔐 正在生成完整性校验工具...")
+    print("=" * 60)
+    manifest_json = _generate_hash_manifest(target_dir)
+    _compile_integrity_checker(target_dir, manifest_json)
+
     print("=" * 60)
     print(f"🎉 恭喜！自动化打包圆满成功！")
     print(f"📂 你的软件已生成在: {target_dir}")
     print(f"📦 压缩包已生成在: {zip_path}")
+    print(f"🔐 完整性校验工具: {target_dir}{chr(92)}完整性校验.exe")
     print("=" * 60)
 
 
