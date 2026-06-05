@@ -201,9 +201,8 @@ def build_project():
         sys.executable, "-m", "nuitka",
         "--standalone",
         "--windows-console-mode=disable",
-        "--show-scons",  # 实时日志打印
-        "--lto=yes",                         # 开启链路优化
-        "--remove-output",                   # 编译完成后清除缓存
+        "--lto=yes",  # 开启链路优化
+        "--remove-output",  # 编译完成后清除缓存
         "--include-package=uvicorn",
         "--include-package=sqlalchemy",
         "--include-package=pydantic",
@@ -228,7 +227,7 @@ def build_project():
     if not RELEASES_DIR.exists():
         RELEASES_DIR.mkdir()
 
-    # 动态生成目录名: Invoice-Management-System-v1.2.1-Windows
+    # 动态生成目录名
     version = get_app_version()
     os_name = get_os_name()
     release_folder_name = f"{ROOT_DIR.name}-v{version}-{os_name}"

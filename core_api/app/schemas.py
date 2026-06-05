@@ -139,3 +139,15 @@ class SettingsPreviewResponse(BaseModel):
 class SettingsRestartResponse(BaseModel):
     action: str = Field(default="restart", description="前端应执行的操作")
     message: str = Field(default="请杀死后端进程并重新拉起", description="提示信息")
+
+
+# ── PDF 导出 ──
+class ExportPdfsRequest(BaseModel):
+    uuuids: List[str] = Field(..., min_length=1, description="要导出的开销记录 uuuid 列表")
+    target_dir: str = Field(..., description="用户选择的目标目录绝对路径")
+
+
+class ExportPdfsResponse(BaseModel):
+    export_dir: str = Field(..., description="实际创建的导出文件夹绝对路径")
+    file_count: int = Field(..., description="成功导出的 PDF 数量")
+    files: List[str] = Field(default_factory=list, description="导出的文件名列表")

@@ -109,6 +109,27 @@ class ExpenseService {
     throw Exception('删除失败: ${resp.statusCode}');
   }
 
+  /// 导出选中明细的 PDF 到用户指定目录
+  ///
+  /// [uuuids] 选中的开销记录主键集合，[targetDir] 用户选择的文件夹绝对路径。
+  /// 返回 {export_dir, file_count, files}。
+  static Future<Map<String, dynamic>> exportPdfs(
+      Set<String> uuuids, String targetDir) async {
+    final resp = await http.post(
+      Uri.parse('$_base/api/expenses/export-pdfs'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'uuuids': uuuids.toList(),
+        'target_dir': targetDir,
+      }),
+    );
+    if (resp.statusCode == 200) {
+      return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    }
+    final err = json.decode(utf8.decode(resp.bodyBytes));
+    throw Exception(err['detail'] ?? '导出失败: ${resp.statusCode}');
+  }
+
   /// 屏蔽一条开销记录（独立旁路，不影响正常状态流转）
   static Future<bool> blockExpense(String uuuid) async {
     final resp =

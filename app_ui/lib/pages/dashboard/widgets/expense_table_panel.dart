@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../services/expense_service.dart';
 import '../../../widgets/glass_card.dart';
+import 'add_expense_dialog.dart';
+import 'column_width_manager.dart';
 
 /// 业务流水表格面板 — 搜索 / 筛选 / 全选 / 状态流转 / 删除 / 新增
 ///
@@ -50,30 +51,12 @@ class ExpenseTablePanel extends StatefulWidget {
   State<ExpenseTablePanel> createState() => _ExpenseTablePanelState();
 }
 
-class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
-  // ── 列宽持久化 ──
-  static const _colWidthsKey = 'table_column_widths';
-  bool _loadedSavedWidths = false;
-
-  // ── 新增表单控制器 ──
-  final _formKey = GlobalKey<FormState>();
-  final _titleCtrl = TextEditingController();
-  final _amountCtrl = TextEditingController();
-  final _dateCtrl = TextEditingController();
-  final _projectCtrl = TextEditingController();
-  final _typeCtrl = TextEditingController();
-
+class _ExpenseTablePanelState extends State<ExpenseTablePanel>
+    with ColumnWidthManager {
   // ── 分页 ──
   int _currentPage = 0;
   static const int _pageSize = 50;
   bool _searchVisible = false;
-
-  // ── 列宽状态（可拖拽调整） ──
-  Map<int, double> _columnWidths = {};
-  static const double _minColWidth = 60.0;
-  int? _resizingColIndex;
-  double _resizeStartX = 0;
-  double _resizeStartWidth = 0;
 
   int get _totalPages =>
       widget.expenses.isEmpty ? 0 : (widget.expenses.length / _pageSize).ceil();
@@ -142,78 +125,14 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
       ..sort();
   }
 
-  // ── 列宽（每次 build 根据可用宽度重新计算，自动适应） ──
-  double _lastTotalWidth = 0;
-
-  /// 按比例分配列宽，确保总和精确 ≤ totalWidth，永不溢出。
-  /// 若有已保存的列宽则直接复用，不重新计算比例。
-  void _initColumnWidths(double totalWidth) {
-    if (_loadedSavedWidths) return; // 已从 SharedPreferences 恢复，不再覆盖
-    if ((totalWidth - _lastTotalWidth).abs() < 10) return; // 防抖 10px，消闪烁
-    _lastTotalWidth = totalWidth;
-
-    // 固定开销：col[0] 50 + checkbox 42 + 8个8px间隔 64 = 156
-    const fixed = 50.0 + 42.0 + 64.0;
-    final remaining = (totalWidth - fixed).clamp(50.0, double.infinity);
-    // 系数和 = 1.00+1.55+1.55+0.80+0.85+0.90+0.90+1.00 = 8.55
-    const sum = 1.00 + 1.55 + 1.55 + 0.80 + 0.85 + 0.90 + 0.90 + 1.00;
-    final unit = remaining / sum;
-    _columnWidths = {
-      0: unit * 1.00,             // 发票
-      1: unit * 1.55,             // 日期
-      2: unit * 1.55,             // 事由
-      3: unit * 0.80,             // 金额
-      4: unit * 0.85,             // 状态
-      5: unit * 0.90,             // 项目
-      6: unit * 0.90,             // 类型
-      7: unit * 1.00,             // 备注
-    };
-  }
-
   @override
   void initState() {
     super.initState();
-    _loadColumnWidths();
-  }
-
-  Future<void> _loadColumnWidths() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_colWidthsKey);
-      if (raw != null) {
-        final decoded = json.decode(raw) as Map<String, dynamic>;
-        setState(() {
-          _columnWidths = decoded.map((k, v) => MapEntry(int.parse(k), (v as num).toDouble()));
-          _loadedSavedWidths = true;
-        });
-      }
-    } catch (_) {
-      // 解析失败则使用默认比例分配
-    }
-  }
-
-  Future<void> _saveColumnWidths() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final encoded = json.encode(_columnWidths.map((k, v) => MapEntry(k.toString(), v)));
-      await prefs.setString(_colWidthsKey, encoded);
-    } catch (_) {
-      // 保存失败静默忽略
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant ExpenseTablePanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
+    loadColumnWidths();
   }
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
-    _amountCtrl.dispose();
-    _dateCtrl.dispose();
-    _projectCtrl.dispose();
-    _typeCtrl.dispose();
     super.dispose();
   }
 
@@ -278,6 +197,8 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
                 if (widget.selectedUuuids.isNotEmpty) ...[
                   if (hasNormal) const SizedBox(width: 4),
                   _batchStatusMenu(),
+                  const SizedBox(width: 4),
+                  _exportBtn(),
                 ],
                 const SizedBox(width: 4),
                 _addBtn(),
@@ -555,6 +476,44 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
     );
   }
 
+  // ── 导出 PDF ──
+  Widget _exportBtn() {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF059669),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      ),
+      icon: const Icon(Icons.file_download, size: 16),
+      label: Text('导出 (${widget.selectedUuuids.length})',
+          style: const TextStyle(fontSize: 12)),
+      onPressed: _onExportPdfs,
+    );
+  }
+
+  Future<void> _onExportPdfs() async {
+    // 弹出文件夹选择器
+    final dir = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: '选择导出目录',
+    );
+    if (dir == null || !mounted) return; // 用户取消
+
+    try {
+      final result = await ExpenseService.exportPdfs(widget.selectedUuuids, dir);
+      final count = result['file_count'] as int? ?? 0;
+      final exportDir = result['export_dir']?.toString() ?? dir;
+      if (mounted) {
+        _showSnack('导出完成：$count 个 PDF 已保存到 $exportDir');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('导出失败: $e', isError: true);
+      }
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   // 📊 数据表格（可拖拽列宽）
   // ═══════════════════════════════════════════════════════════════════
@@ -567,10 +526,10 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
     }
 
     return LayoutBuilder(builder: (ctx, constraints) {
-      _initColumnWidths(constraints.maxWidth);
+      initColumnWidths(constraints.maxWidth);
 
       // 计算内容总宽度（checkbox 42 + 列宽和 + 8个8px间隔）
-      final colsWidth = _columnWidths.values.fold(0.0, (a, b) => a + b);
+      final colsWidth = columnWidths.values.fold(0.0, (a, b) => a + b);
       final contentW = 42.0 + colsWidth + 64.0;
 
       return RepaintBoundary(
@@ -627,7 +586,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
           ),
           ...List.generate(colDefs.length, (i) {
             final (label, colIdx) = colDefs[i];
-            final width = _columnWidths[colIdx] ?? 100.0;
+            final width = columnWidths[colIdx] ?? 100.0;
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -646,23 +605,23 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onPanStart: (_) {
-                    _resizingColIndex = colIdx;
-                    _resizeStartX = 0;
-                    _resizeStartWidth = _columnWidths[colIdx]!;
+                    resizingColIndex = colIdx;
+                    resizeStartX = 0;
+                    resizeStartWidth = columnWidths[colIdx]!;
                   },
                   onPanUpdate: (d) {
-                    if (_resizingColIndex == null) return;
-                    _resizeStartX += d.delta.dx;
+                    if (resizingColIndex == null) return;
+                    resizeStartX += d.delta.dx;
                     final newWidth =
-                        (_resizeStartWidth + _resizeStartX).clamp(
-                            _minColWidth, 400.0);
+                        (resizeStartWidth + resizeStartX).clamp(
+                            ColumnWidthManager.minColWidth, 400.0);
                     setState(() {
-                      _columnWidths[_resizingColIndex!] = newWidth;
+                      columnWidths[resizingColIndex!] = newWidth;
                     });
                   },
                   onPanEnd: (_) {
-                    _resizingColIndex = null;
-                    _saveColumnWidths();
+                    resizingColIndex = null;
+                    saveColumnWidths();
                   },
                   child: Container(
                     width: 8,
@@ -673,7 +632,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
                         width: 2,
                         height: 16,
                         decoration: BoxDecoration(
-                          color: _resizingColIndex == colIdx
+                          color: resizingColIndex == colIdx
                               ? Colors.blue
                               : Colors.grey.shade300,
                           borderRadius: BorderRadius.circular(1),
@@ -744,30 +703,30 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
                 ),
               ),
               // ── 列数据（每个 cell 后紧跟 8px 占位，匹配表头手柄宽度） ──
-              _cellWidget(_columnWidths[0] ?? 50, _invoiceTypeIcon(invoiceType)),
+              _cellWidget(columnWidths[0] ?? 50, _invoiceTypeIcon(invoiceType)),
               const SizedBox(width: 8),
-              _cell(_columnWidths[1] ?? 100, date,
+              _cell(columnWidths[1] ?? 100, date,
                   color: const Color(0xFF334155)),
               const SizedBox(width: 8),
-              _cell(_columnWidths[2] ?? 150, title,
+              _cell(columnWidths[2] ?? 150, title,
                   color: const Color(0xFF64748B), bold: false),
               const SizedBox(width: 8),
-              _cell(_columnWidths[3] ?? 80,
+              _cell(columnWidths[3] ?? 80,
                   widget.isPrivacyHidden ? '****' : amount.toStringAsFixed(2),
                   color: const Color(0xFF0F172A),
                   bold: true,
                   monospace: true),
               const SizedBox(width: 8),
               _cellWidget(
-                  _columnWidths[4] ?? 100,
+                  columnWidths[4] ?? 100,
                   _statusDropdown(uuuid, status, statusClr)),
               const SizedBox(width: 8),
-              _cellWidget(_columnWidths[5] ?? 100,
+              _cellWidget(columnWidths[5] ?? 100,
                   project == '-' ? Text('-', style: _cellStyle()) : _tag(project, bg: const Color(0xFFE0F2FE), fg: const Color(0xFF0284C7))),
               const SizedBox(width: 8),
-              _cellWidget(_columnWidths[6] ?? 100, _typeTag(type)),
+              _cellWidget(columnWidths[6] ?? 100, _typeTag(type)),
               const SizedBox(width: 8),
-              _cell(_columnWidths[7] ?? 120, remark, color: const Color(0xFF64748B)),
+              _cell(columnWidths[7] ?? 120, remark, color: const Color(0xFF64748B)),
             ]),
           ),
         );
@@ -989,153 +948,14 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel> {
   // ➕ 新增开销 Dialog
   // ═══════════════════════════════════════════════════════════════════
   void _showAddExpenseDialog() {
-    _clearForm();
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          return AlertDialog(
-            backgroundColor: Colors.white.withValues(alpha: 0.95),
-            title: const Text('新增业务开销记录',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            content: SingleChildScrollView(
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _field('事由 / 开销名称 *', Icons.edit_note, _titleCtrl,
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? '请输入事由' : null),
-                    const SizedBox(height: 14),
-                    _field('金额 (元) *', Icons.attach_money, _amountCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return '请输入金额';
-                          if (double.tryParse(v.trim()) == null) return '请输入合法数字';
-                          return null;
-                        }),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: _dateCtrl,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                          labelText: '发生日期 *',
-                          prefixIcon: Icon(Icons.calendar_today)),
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: ctx,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2101),
-                        );
-                        if (picked != null) {
-                          _dateCtrl.text =
-                              '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                        }
-                      },
-                      validator: (v) =>
-                          (v == null || v.isEmpty) ? '请选择日期' : null,
-                    ),
-                    const SizedBox(height: 14),
-                    _autocompleteField(
-                        '开销项目', Icons.folder_outlined, _projectCtrl,
-                        options: _existingProjects),
-                    const SizedBox(height: 14),
-                    _autocompleteField(
-                        '开销类型', Icons.category_outlined, _typeCtrl,
-                        options: _existingTypes,
-                        hint: '选择或输入类型（如差旅交通）'),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  _clearForm();
-                  Navigator.of(ctx).pop();
-                },
-                child: const Text('取消'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-                onPressed: () => _submitAddExpense(ctx),
-                child: const Text('提交保存',
-                    style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          );
-        },
+      builder: (_) => AddExpenseDialog(
+        existingProjects: _existingProjects,
+        existingTypes: _existingTypes,
+        onSubmitted: widget.onAddExpenseSubmitted,
       ),
     );
-  }
-
-  Widget _field(String label, IconData icon, TextEditingController ctrl,
-      {TextInputType? keyboardType, String? Function(String?)? validator}) {
-    return TextFormField(
-      controller: ctrl,
-      keyboardType: keyboardType,
-      decoration:
-          InputDecoration(labelText: label, prefixIcon: Icon(icon)),
-      validator: validator,
-    );
-  }
-
-  Widget _autocompleteField(
-      String label, IconData icon, TextEditingController ctrl,
-      {required List<String> options, String? hint}) {
-    return Autocomplete<String>(
-      optionsBuilder: (v) {
-        if (v.text.isEmpty) return options;
-        return options
-            .where((o) => o.toLowerCase().contains(v.text.toLowerCase()));
-      },
-      onSelected: (val) => ctrl.text = val,
-      fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
-        controller.text = ctrl.text;
-        return TextFormField(
-          controller: controller,
-          focusNode: focusNode,
-          onChanged: (v) => ctrl.text = v,
-          decoration: InputDecoration(
-            labelText: label,
-            prefixIcon: Icon(icon),
-            hintText: hint,
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _submitAddExpense(BuildContext dialogCtx) async {
-    if (!_formKey.currentState!.validate()) return;
-    try {
-      await ExpenseService.addExpense({
-        'title': _titleCtrl.text.trim(),
-        'amount': double.parse(_amountCtrl.text.trim()),
-        'incurred_date': _dateCtrl.text.trim(),
-        'status': '待开票',
-        'project_name':
-            _projectCtrl.text.trim().isEmpty ? null : _projectCtrl.text.trim(),
-        'expense_type':
-            _typeCtrl.text.trim().isEmpty ? null : _typeCtrl.text.trim(),
-      });
-      _clearForm();
-      if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
-      widget.onAddExpenseSubmitted();
-    } catch (e) {
-      _showSnack('新增失败: $e', isError: true);
-    }
-  }
-
-  void _clearForm() {
-    _titleCtrl.clear();
-    _amountCtrl.clear();
-    _dateCtrl.clear();
-    _projectCtrl.clear();
-    _typeCtrl.clear();
   }
 
   void _showSnack(String msg, {bool isError = false}) {

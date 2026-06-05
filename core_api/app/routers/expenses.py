@@ -2,9 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from loguru import logger
+from pathlib import Path
+from shutil import copy2
+from datetime import date
 
 from app.database import get_db
-from app import schemas, crud
+from app import schemas, crud, models, config_manager
 
 router = APIRouter(
     prefix="/api/expenses",
@@ -110,3 +113,57 @@ def delete_expense(uuuid: str, db: Session = Depends(get_db)):
         logger.opt(exception=True).error("删除开销失败 | uuuid={}", uuuid)
         db.rollback()
         raise HTTPException(status_code=500, detail=f"删除操作失败: {str(e)}")
+
+
+# 7. 导出选中明细的 PDF 到指定目录
+@router.post("/export-pdfs", response_model=schemas.ExportPdfsResponse)
+def export_pdfs(request: schemas.ExportPdfsRequest, db: Session = Depends(get_db)):
+    logger.info("POST /api/expenses/export-pdfs | 导出PDF请求 | uuuids={}", request.uuuids)
+
+    target_base = Path(request.target_dir)
+    if not target_base.exists():
+        logger.warning("导出失败：目标目录不存在 | path={}", request.target_dir)
+        raise HTTPException(status_code=400, detail="目标目录不存在")
+    if not target_base.is_dir():
+        raise HTTPException(status_code=400, detail="目标路径不是目录")
+
+    # 在目标目录下创建以今天日期命名的子文件夹
+    today = date.today().isoformat()  # e.g. "2025-07-11"
+    export_dir = target_base / today
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    exported_files: List[str] = []
+    for uuuid in request.uuuids:
+        invoices = db.query(models.InvoiceRecord).filter_by(expense_uuuid=uuuid).all()
+        for inv in invoices:
+            try:
+                src = config_manager.resolve_absolute_pdf_path(inv.saved_path)
+            except Exception as e:
+                logger.warning("解析PDF路径失败 | saved_path={} | error={}", inv.saved_path, e)
+                continue
+            if not src.exists():
+                logger.warning("PDF源文件不存在，跳过 | path={}", src)
+                continue
+
+            # 处理重名：若已存在则加 (1)、(2) 后缀
+            dest = export_dir / inv.file_name
+            if dest.exists():
+                stem = dest.stem
+                suffix = dest.suffix
+                counter = 1
+                while dest.exists():
+                    dest = export_dir / f"{stem}({counter}){suffix}"
+                    counter += 1
+
+            try:
+                copy2(src, dest)
+                exported_files.append(dest.name)
+                logger.info("PDF导出成功 | src={} dest={}", src, dest)
+            except Exception as e:
+                logger.opt(exception=True).error("复制PDF失败 | src={} dest={}", src, dest)
+
+    return schemas.ExportPdfsResponse(
+        export_dir=str(export_dir),
+        file_count=len(exported_files),
+        files=exported_files,
+    )
