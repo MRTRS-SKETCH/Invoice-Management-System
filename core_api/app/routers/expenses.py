@@ -130,10 +130,36 @@ def export_pdfs(request: schemas.ExportPdfsRequest, db: Session = Depends(get_db
     # 在目标目录下创建以今天日期命名的子文件夹
     today = date.today().isoformat()  # e.g. "2025-07-11"
     export_dir = target_base / today
-    export_dir.mkdir(parents=True, exist_ok=True)
+    all_dir = export_dir / "全部发票"
+    vat_dir = export_dir / "增值票"
+    all_dir.mkdir(parents=True, exist_ok=True)
+    vat_dir.mkdir(parents=True, exist_ok=True)
 
-    exported_files: List[str] = []
+    all_files: List[str] = []
+    vat_files: List[str] = []
+
+    def _copy_to(dest_dir: Path, filename: str, src: Path) -> Path | None:
+        """将 src 复制到 dest_dir，处理重名。返回目标路径或 None"""
+        dest = dest_dir / filename
+        if dest.exists():
+            stem = dest.stem
+            suffix = dest.suffix
+            counter = 1
+            while dest.exists():
+                dest = dest_dir / f"{stem}({counter}){suffix}"
+                counter += 1
+        try:
+            copy2(src, dest)
+            return dest
+        except Exception as e:
+            logger.opt(exception=True).error("复制PDF失败 | src={} dest={}", src, dest)
+            return None
+
     for uuuid in request.uuuids:
+        # 查询该开销记录的发票类型（用于判断是否属于增值票）
+        expense = db.query(models.ExpenseRecord).filter_by(uuuid=uuuid).first()
+        is_vat = expense is not None and expense.invoice_type == "增值票"
+
         invoices = db.query(models.InvoiceRecord).filter_by(expense_uuuid=uuuid).all()
         for inv in invoices:
             try:
@@ -145,25 +171,22 @@ def export_pdfs(request: schemas.ExportPdfsRequest, db: Session = Depends(get_db
                 logger.warning("PDF源文件不存在，跳过 | path={}", src)
                 continue
 
-            # 处理重名：若已存在则加 (1)、(2) 后缀
-            dest = export_dir / inv.file_name
-            if dest.exists():
-                stem = dest.stem
-                suffix = dest.suffix
-                counter = 1
-                while dest.exists():
-                    dest = export_dir / f"{stem}({counter}){suffix}"
-                    counter += 1
+            dest = _copy_to(all_dir, inv.file_name, src)
+            if dest:
+                all_files.append(dest.name)
+                logger.info("PDF导出→全部发票 | src={} dest={}", src, dest)
 
-            try:
-                copy2(src, dest)
-                exported_files.append(dest.name)
-                logger.info("PDF导出成功 | src={} dest={}", src, dest)
-            except Exception as e:
-                logger.opt(exception=True).error("复制PDF失败 | src={} dest={}", src, dest)
+            if is_vat:
+                dest = _copy_to(vat_dir, inv.file_name, src)
+                if dest:
+                    vat_files.append(dest.name)
+                    logger.info("PDF导出→增值票 | src={} dest={}", src, dest)
 
     return schemas.ExportPdfsResponse(
         export_dir=str(export_dir),
-        file_count=len(exported_files),
-        files=exported_files,
+        all_dir=str(all_dir),
+        vat_dir=str(vat_dir),
+        all_count=len(all_files),
+        vat_count=len(vat_files),
+        files=all_files,
     )

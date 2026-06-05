@@ -112,7 +112,8 @@ class ExpenseService {
   /// 导出选中明细的 PDF 到用户指定目录
   ///
   /// [uuuids] 选中的开销记录主键集合，[targetDir] 用户选择的文件夹绝对路径。
-  /// 返回 {export_dir, file_count, files}。
+  /// 返回 {export_dir, all_dir, vat_dir, all_count, vat_count, files}。
+  /// 后端会在 targetDir 下创建 YYYY-MM-DD/全部发票/ 和 YYYY-MM-DD/增值票/ 两个子文件夹。
   static Future<Map<String, dynamic>> exportPdfs(
       Set<String> uuuids, String targetDir) async {
     final resp = await http.post(

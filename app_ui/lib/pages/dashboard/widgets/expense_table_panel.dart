@@ -149,6 +149,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
           const Divider(height: 1),
           Expanded(child: _buildTable()),
           if (_totalPages > 1) _buildPagination(),
+          if (widget.selectedUuuids.isNotEmpty) _buildSelectionFooter(),
         ],
       ),
     );
@@ -487,8 +488,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       ),
       icon: const Icon(Icons.file_download, size: 16),
-      label: Text('导出 (${widget.selectedUuuids.length})',
-          style: const TextStyle(fontSize: 12)),
+      label: const Text('导出', style: TextStyle(fontSize: 12)),
       onPressed: _onExportPdfs,
     );
   }
@@ -502,10 +502,11 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
 
     try {
       final result = await ExpenseService.exportPdfs(widget.selectedUuuids, dir);
-      final count = result['file_count'] as int? ?? 0;
+      final allCount = result['all_count'] as int? ?? 0;
+      final vatCount = result['vat_count'] as int? ?? 0;
       final exportDir = result['export_dir']?.toString() ?? dir;
       if (mounted) {
-        _showSnack('导出完成：$count 个 PDF 已保存到 $exportDir');
+        _showSnack('导出完成：全部 $allCount 个 PDF（含 $vatCount 张增值票）已保存到 $exportDir');
       }
     } catch (e) {
       if (mounted) {
@@ -958,6 +959,50 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
     );
   }
 
+  // ── 选中金额汇总底栏 ──
+  Widget _buildSelectionFooter() {
+    double total = 0;
+    for (final e in widget.expenses) {
+      if (widget.selectedUuuids.contains(e['uuuid']?.toString())) {
+        total += (e['amount'] as num?)?.toDouble() ?? 0;
+      }
+    }
+    final lower = total.toStringAsFixed(2);
+    final upper = _toChineseUppercase(total);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4).withValues(alpha: 0.9),
+        borderRadius:
+            const BorderRadius.vertical(bottom: Radius.circular(12)),
+      ),
+      child: Row(
+        children: [
+          Text('已选 ${widget.selectedUuuids.length} 条',
+              style: const TextStyle(
+                  fontSize: 12, color: Color(0xFF475569))),
+          const Spacer(),
+          const Text('合计：',
+              style: TextStyle(
+                  fontSize: 12, color: Color(0xFF475569))),
+          Text('¥$lower',
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF059669),
+                  fontFamily: 'Consolas')),
+          const SizedBox(width: 16),
+          Text(upper,
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF065F46))),
+        ],
+      ),
+    );
+  }
+
   void _showSnack(String msg, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -967,4 +1012,88 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
       duration: const Duration(seconds: 2),
     ));
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// 🔢 人民币大写转换
+// ═══════════════════════════════════════════════════════════════════
+
+/// 将金额转换为中文财务大写（如 12345.67 → 壹万贰仟叁佰肆拾伍元陆角柒分）
+String _toChineseUppercase(double amount) {
+  if (amount < 0.005) return '零元整';
+
+  const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
+  const units = ['', '拾', '佰', '仟'];
+  const bigUnits = ['', '万', '亿', '兆'];
+
+  final numStr = amount.toStringAsFixed(2);
+  final parts = numStr.split('.');
+  final intStr = parts[0];
+  final jiao = int.parse(parts[1][0]);
+  final fen = int.parse(parts[1][1]);
+
+  String result = '';
+
+  // ── 整数部分：每 4 位一组（个/万/亿） ──
+  if (intStr != '0') {
+    final len = intStr.length;
+    // 补齐到 4 的倍数方便分组
+    final padLen = ((len + 3) ~/ 4) * 4;
+    final padded = intStr.padLeft(padLen, '0');
+    final groupCount = padLen ~/ 4;
+
+    final groups = <String>[];
+    for (int g = 0; g < groupCount; g++) {
+      final start = g * 4;
+      final seg = padded.substring(start, start + 4);
+      final bigIdx = groupCount - 1 - g; // 当前组对应的 bigUnit 索引
+
+      String segStr = '';
+      bool hasNonZero = false;
+      for (int i = 0; i < 4; i++) {
+        final d = int.parse(seg[i]);
+        if (d != 0) {
+          // 跨组零：当组有前导零（第一个非零数字不在 seg 首位），且前面已有内容时补零
+          if (i > 0 && !hasNonZero && groups.isNotEmpty) {
+            segStr += '零';
+          }
+          segStr += digits[d] + units[3 - i];
+          hasNonZero = true;
+        } else {
+          if (hasNonZero && !segStr.endsWith('零')) {
+            segStr += '零';
+          }
+        }
+      }
+      // 去掉末尾的零
+      while (segStr.endsWith('零')) {
+        segStr = segStr.substring(0, segStr.length - 1);
+      }
+      if (segStr.isNotEmpty && bigIdx > 0) {
+        segStr += bigUnits[bigIdx];
+      }
+      if (segStr.isNotEmpty) {
+        groups.add(segStr);
+      }
+    }
+    result = groups.join();
+    // 清理连续零
+    result = result.replaceAll(RegExp(r'零+'), '零');
+    // 去掉末尾零（可能在大单位前）
+    if (result.endsWith('零')) {
+      result = result.substring(0, result.length - 1);
+    }
+    result += '元';
+  }
+
+  // ── 角分 ──
+  if (jiao == 0 && fen == 0) {
+    result += '整';
+  } else {
+    if (jiao > 0) result += '${digits[jiao]}角';
+    if (fen > 0) result += '${digits[fen]}分';
+  }
+
+  return result;
 }

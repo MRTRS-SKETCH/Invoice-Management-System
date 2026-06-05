@@ -148,6 +148,9 @@ class ExportPdfsRequest(BaseModel):
 
 
 class ExportPdfsResponse(BaseModel):
-    export_dir: str = Field(..., description="实际创建的导出文件夹绝对路径")
-    file_count: int = Field(..., description="成功导出的 PDF 数量")
-    files: List[str] = Field(default_factory=list, description="导出的文件名列表")
+    export_dir: str = Field(..., description="日期子文件夹路径（如 D:/桌面/2025-07-11）")
+    all_dir: str = Field(..., description="全部发票子文件夹路径")
+    vat_dir: str = Field(..., description="增值票子文件夹路径（仅含增值税专用发票）")
+    all_count: int = Field(..., description="全部发票数量")
+    vat_count: int = Field(..., description="增值票数量")
+    files: List[str] = Field(default_factory=list, description="导出的全部文件名列表")
