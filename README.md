@@ -40,7 +40,7 @@ Windows 桌面应用 — 管理企业业务开销的全生命周期：开票 →
 | PDF | syncfusion_flutter_pdfviewer | 内嵌预览 + 拖拽绑定 |
 | 发票解析 | pdfplumber（Python） | PDF 智能解析 → 自动提取金额/日期/类型并建档 |
 | 拖拽 | desktop_drop | PDF 文件拖拽绑定 |
-| 本地持久化 | shared_preferences | 表格列宽记忆，重启/缩放不变 |
+| 本地持久化 | ConfigStorage | 本地 JSON 持久化（`config/preferences.json`），100ms 防抖写入，存储表格列宽等 UI 状态 |
 | 文件选择 | file_picker | 设置面板中浏览选择 db/log 存放目录 |
 
 ## 功能概览
@@ -117,7 +117,8 @@ cd app_ui && flutter run -d windows    # 终端 2：前端
 │   │   ├── config.dart               # AppConfig.baseUrl（启动时由 port.txt 动态更新）
 │   │   ├── logger.dart               # 缓冲队列 → HTTP 批量日志上报
 │   │   ├── services/
-│   │   │   └── expense_service.dart  # 全部 HTTP 请求 + Settings API
+│   │   │   ├── expense_service.dart  # 全部 HTTP 请求 + Settings API
+│   │   │   └── config_storage.dart   # 本地 JSON 持久化（config/preferences.json）
 │   │   ├── widgets/
 │   │   │   ├── custom_title_bar.dart    # 沉浸式标题栏 + 齿轮 ⚙ 设置入口
 │   │   │   ├── settings_dialog.dart     # 路径设置：浏览选择 + 结构树预览 + 重新连接
@@ -129,13 +130,21 @@ cd app_ui && flutter run -d windows    # 终端 2：前端
 │   │           ├── heatmap_card.dart        # 近 90 天业务频次热力图
 │   │           ├── dual_analysis_card.dart  # 项目进度条 + 类型环形图
 │   │           ├── expense_table_panel.dart # 明细表：搜索/筛选/分页/全选/列宽拖拽持久化
-│   │           └── invoice_pdf_panel.dart   # PDF 预览 + 缩略图条 + 拖拽绑定
+│   │           ├── invoice_pdf_panel.dart   # PDF 预览 + 缩略图条 + 拖拽绑定
+│   │           ├── add_expense_dialog.dart  # 新增开销对话框
+│   │           ├── batch_upload_dialog.dart # 批量上传进度遮罩
+│   │           └── column_width_manager.dart# 列宽持久化 mixin
 │   ├── windows/                      # Windows 原生层 (C++/CMake)
 │   └── pubspec.yaml                  # http, window_manager, shared_preferences, desktop_drop,
 │                                     #   fl_chart, syncfusion_flutter_pdfviewer, file_picker
 ├── core_api/                         # Python 后端
 │   ├── main.py                       # FastAPI 入口 · 端口扫描 · PID/port.txt · 自动建表
 │   ├── requirements.txt
+│   ├── pytest.ini                    # pytest 配置（unit/integration/slow 标记）
+│   ├── tests/                        # pytest 测试套件
+│   │   ├── conftest.py               # 全局 fixture（隔离环境 + 内存 SQLite）
+│   │   ├── unit/                     # 单元测试（纯逻辑，无 IO）
+│   │   └── integration/              # 集成测试（FastAPI TestClient）
 │   └── app/
 │       ├── database.py               # 延迟初始化 engine + 连接池 + WAL pragma
 │       ├── models.py                 # ORM 表结构（uuuid 主键）

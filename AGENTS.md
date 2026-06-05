@@ -11,7 +11,7 @@ Windows 桌面应用，管理企业业务开销全生命周期（开票 → 报�
 - **配置**：`app/config_manager.py` — JSON 配置中心，管理 db_path/log_path、PDF 分片、路径校验、目录预览、预建目录
 - **日志**：Loguru（后端 `setup_loguru(log_path)` 参数化）+ 自定义 `AppLogger`（前端缓冲队列 → HTTP 批量上报 `/api/client-logs/batch`）
 - **打包**：Nuitka（后端 → `main.exe`）+ Flutter build（前端），`build_app.py` 5 步：编译 → 拼装 → zip → 完整性校验 `.exe`
-- **本地持久化**：`shared_preferences` 存储表格列宽，拖拽调整后自动保存，重启/缩放不变
+- **本地持久化**：`ConfigStorage` 单例管理 `config/preferences.json`，100ms 防抖异步写入，存储表格列宽等 UI 状态（替代 `shared_preferences` 用于列宽存储）
 
 ## Commands
 
@@ -29,6 +29,11 @@ cd app_ui && flutter run -d windows    # 终端 2：前端
 
 # 生产打包
 python build_app.py
+
+# 运行测试
+cd core_api && pytest                  # 全部测试
+cd core_api && pytest -m unit          # 仅单元测试
+cd core_api && pytest -m integration   # 仅集成测试
 ```
 
 ## Architecture
@@ -52,13 +57,35 @@ core_api/                        # Python 后端
     └── utils/
         └── invoice_parser.py    # pdfplumber 解析发票 PDF（提取金额/日期/类型）
 
+core_api/tests/                  # pytest 测试套件
+├── conftest.py                  # 全局 fixture：隔离临时目录 + 内存 SQLite + TestClient
+├── fixtures/                    # 共享测试数据夹具
+├── unit/                        # 单元测试（纯逻辑，无 IO）
+│   ├── test_config_manager.py
+│   ├── test_crud.py
+│   ├── test_database.py
+│   ├── test_invoice_parser.py
+│   ├── test_logger_config.py
+│   ├── test_models.py
+│   ├── test_schemas.py
+│   └── test_smoke.py
+└── integration/                 # 集成测试（FastAPI TestClient + SQLite :memory:）
+    ├── test_routers_expenses.py
+    ├── test_routers_invoices.py
+    ├── test_routers_dashboard.py
+    ├── test_routers_client_logs.py
+    └── test_routers_settings.py
+
+pytest.ini                       # pytest 配置：标记注册（unit/integration/slow）、路径、超时、警告过滤
+
 app_ui/                          # Flutter 前端
 ├── lib/
 │   ├── main.dart                # 入口：WindowOptions + backendReady Completer + PID 清场 + Sidecar 生命周期
 │   ├── config.dart              # AppConfig.baseUrl（非 const，启动时由 port.txt 动态更新）
 │   ├── logger.dart              # AppLogger 单例：内存缓冲 50 条 / 2 秒 → POST /api/client-logs/batch
 │   ├── services/
-│   │   └── expense_service.dart # 全部 HTTP 请求（静态方法，含 Settings API：previewPaths/updateSettingsPaths/requestRestart）
+│   │   ├── expense_service.dart # 全部 HTTP 请求（静态方法，含 Settings API：previewPaths/updateSettingsPaths/requestRestart）
+│   │   └── config_storage.dart  # 本地 JSON 持久化（config/preferences.json，100ms 防抖写入）
 │   ├── widgets/
 │   │   ├── custom_title_bar.dart# 沉浸式标题栏 + 齿轮 ⚙ 设置入口
 │   │   ├── settings_dialog.dart # 路径设置：只读浏览选择 + 结构树预览 + 400ms 防抖 + 重新连接按钮
@@ -69,8 +96,11 @@ app_ui/                          # Flutter 前端
 │           ├── kpi_summary_card.dart    # 2×2 KPI 指标卡（接收预计算值，隐私切换）
 │           ├── heatmap_card.dart        # 90 天热力图（右对齐 + resize 自动滚动）
 │           ├── dual_analysis_card.dart  # 项目进度条 + 类型环形图 + 时间范围联动
-│           ├── expense_table_panel.dart # 明细表：搜索/筛选/分页/全选/拖拽列宽（SharedPreferences 持久化）
-│           └── invoice_pdf_panel.dart   # PDF 预览 + 缩略图条 + 拖拽绑定
+│           ├── expense_table_panel.dart # 明细表：搜索/筛选/分页/全选/拖拽列宽（ConfigStorage 持久化）
+│           ├── invoice_pdf_panel.dart   # PDF 预览 + 缩略图条 + 拖拽绑定
+│           ├── add_expense_dialog.dart  # 新增开销对话框（独立表单状态管理）
+│           ├── batch_upload_dialog.dart # 批量上传进度遮罩（毛玻璃 + 圆形进度条）
+│           └── column_width_manager.dart# 列宽持久化 mixin（ColumnWidthManager）
 ├── windows/                     # Win32 原生层（CMake + C++ runner）
 └── pubspec.yaml                 # 依赖：http, window_manager, shared_preferences, desktop_drop, syncfusion_flutter_pdfviewer, fl_chart, file_picker
 
@@ -92,7 +122,7 @@ build_app.py                     # 一键打包：清理 → Nuitka → Flutter 
 - **文件组织**：业务逻辑集中在 `crud.py`（非 router 内嵌），router 只做参数解析 + 错误转换
 - **批量操作**：优先用 `Future.wait` 并发发送 HTTP 请求，完成后单次 `setState` + 单次刷新，不逐条 await
 - **KPI 预计算**：KpiSummaryCard 接收父级预计算的 4 个 double（monthTotal/pending/pendingReimburse/yearTotal），不在 build 内遍历 expenses
-- **列宽持久化**：ExpenseTablePanel 用 `shared_preferences` 存储 `Map<int, double>`（JSON 编码），拖拽 `onPanEnd` 时保存，`initState` 时加载，已保存则跳过比例重算
+- **列宽持久化**：`ColumnWidthManager` mixin 混入 ExpenseTablePanel，用 `ConfigStorage` 存储 `Map<int, double>`（JSON 编码），拖拽 `onPanEnd` 时保存，`initState` 时加载，已保存则跳过比例重算
 - **明细表列序**（当前）：`发票 → 日期 → 事由 → 金额 → 状态 → 项目 → 类型 → 备注`
 - **后端就绪信号**：Dashboard 的 `initState` 中 `await backendReady` 后才发起 API 请求，避免后端未就绪时连接拒绝
 - **清场**：优先读 `config/backend.pid` 精准杀进程；PID 文件缺失时回退端口反查（兼容旧版）。决不遍历端口杀其他程序
