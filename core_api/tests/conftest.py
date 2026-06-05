@@ -197,7 +197,7 @@ def fastapi_client(test_db_session):
 
 @pytest.fixture
 def mock_pdfplumber(monkeypatch) -> MagicMock:
-    """替换 PdfReader 为可控 Mock，不依赖真实 PDF 文件。
+    """替换 pdfplumber.open 为可控 Mock，不依赖真实 PDF 文件。
 
     用法：
         def test_parse_invoice(mock_pdfplumber):
@@ -205,7 +205,11 @@ def mock_pdfplumber(monkeypatch) -> MagicMock:
             result = parse_invoice_pdf("fake.pdf")
             assert result["amount"] == 2996.00
     """
+    mock_pdf = MagicMock()
     mock_page = MagicMock()
+    mock_pdf.pages = [mock_page]
+    mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
+    mock_pdf.__exit__ = MagicMock(return_value=False)
 
     # 默认返回一张完整的增值税专用发票文本（覆盖 5 个解析字段）
     mock_page.extract_text.return_value = (
@@ -217,10 +221,7 @@ def mock_pdfplumber(monkeypatch) -> MagicMock:
         "订单号:2007064325443298\n"
     )
 
-    mock_reader = MagicMock()
-    mock_reader.pages = [mock_page]
+    mock_open = MagicMock(return_value=mock_pdf)
+    monkeypatch.setattr("app.utils.invoice_parser.pdfplumber.open", mock_open)
 
-    mock_constructor = MagicMock(return_value=mock_reader)
-    monkeypatch.setattr("app.utils.invoice_parser.PdfReader", mock_constructor)
-
-    return mock_constructor
+    return mock_open

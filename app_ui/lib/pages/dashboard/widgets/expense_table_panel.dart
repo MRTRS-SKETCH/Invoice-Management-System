@@ -476,6 +476,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
               );
               if (mounted) {
                 _showSnack('删除完成: $success / ${ids.length} 条');
+                widget.onMultiSelectChanged({});  // 清空选中状态 → 连锁清空 PDF 面板
                 widget.onAddExpenseSubmitted();
               }
             },

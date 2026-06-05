@@ -21,6 +21,19 @@ def get_expense_by_uuuid(db: Session, uuuid: str):
     return db.query(models.ExpenseRecord).filter_by(uuuid=uuuid).first()
 
 
+def _apply_expense_filters(query, search=None, status=None, date_from=None, date_to=None):
+    """为开销查询应用通用筛选条件（供 get_expenses / count_expenses 共享）"""
+    if search:
+        query = query.filter(models.ExpenseRecord.title.like(f"%{search}%"))
+    if status:
+        query = query.filter(models.ExpenseRecord.status == status)
+    if date_from:
+        query = query.filter(models.ExpenseRecord.incurred_date >= date_from)
+    if date_to:
+        query = query.filter(models.ExpenseRecord.incurred_date <= date_to)
+    return query
+
+
 def get_expenses(
     db: Session,
     skip: int = 0,
@@ -38,14 +51,8 @@ def get_expenses(
     )
     q = db.query(models.ExpenseRecord)
 
-    if search:
-        q = q.filter(models.ExpenseRecord.title.like(f"%{search}%"))
-    if status:
-        q = q.filter(models.ExpenseRecord.status == status)
-    if date_from:
-        q = q.filter(models.ExpenseRecord.incurred_date >= date_from)
-    if date_to:
-        q = q.filter(models.ExpenseRecord.incurred_date <= date_to)
+    q = _apply_expense_filters(q, search=search, status=status,
+                               date_from=date_from, date_to=date_to)
 
     return q.order_by(desc(models.ExpenseRecord.incurred_date)) \
             .offset(skip) \
@@ -62,16 +69,8 @@ def count_expenses(
 ) -> int:
     """获取开销总数（与 get_expenses 共享筛选条件）"""
     q = db.query(func.count(models.ExpenseRecord.uuuid))
-
-    if search:
-        q = q.filter(models.ExpenseRecord.title.like(f"%{search}%"))
-    if status:
-        q = q.filter(models.ExpenseRecord.status == status)
-    if date_from:
-        q = q.filter(models.ExpenseRecord.incurred_date >= date_from)
-    if date_to:
-        q = q.filter(models.ExpenseRecord.incurred_date <= date_to)
-
+    q = _apply_expense_filters(q, search=search, status=status,
+                               date_from=date_from, date_to=date_to)
     return q.scalar() or 0
 
 
@@ -302,13 +301,20 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
 def get_dashboard_summary(db: Session) -> dict:
     """看板汇总统计 — 单条 SQL 聚合，避免多次全表扫描"""
     logger.opt(lazy=True).debug("查询看板汇总")
-    # 单条查询：同时计算累计总额、待处理金额、待报销/核销中金额
+    from datetime import datetime, timedelta
+
+    # 30 天截止日期
+    cutoff30 = (datetime.now() - timedelta(days=30)).date()
+
+    # 单条查询：同时计算累计总额、待处理金额、待报销/核销中金额、30天累计
     result = db.query(
         func.coalesce(func.sum(models.ExpenseRecord.amount), 0.0).label("total"),
         func.coalesce(
             func.sum(
-                func.iif(models.ExpenseRecord.status == "待开票",
-                         models.ExpenseRecord.amount, 0.0)
+                case(
+                    (models.ExpenseRecord.status == "待开票", models.ExpenseRecord.amount),
+                    else_=0.0
+                )
             ), 0.0
         ).label("pending"),
         func.coalesce(
@@ -319,6 +325,14 @@ def get_dashboard_summary(db: Session) -> dict:
                 )
             ), 0.0
         ).label("pending_reimburse"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (models.ExpenseRecord.incurred_date >= cutoff30, models.ExpenseRecord.amount),
+                    else_=0.0
+                )
+            ), 0.0
+        ).label("month_total"),
     ).first()
 
     # 发票计数独立查询（避免 JOIN 导致金额行重复）
@@ -328,13 +342,14 @@ def get_dashboard_summary(db: Session) -> dict:
         "total_amount": float(result.total),
         "pending_amount": float(result.pending),
         "pending_reimburse": float(result.pending_reimburse),
+        "month_total": float(result.month_total),
         "invoice_count": invoice_count
     }
 
 
 def get_monthly_trend(db: Session) -> list:
     """返回最近 12 个月的报销金额趋势，无数据的月份填 0"""
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     # 纯 stdlib 生成最近 12 个月的月份标签
     now = datetime.now()
@@ -347,10 +362,21 @@ def get_monthly_trend(db: Session) -> list:
             year -= 1
         all_months.append(f"{year}-{month:02d}")
 
-    # 数据库聚合查询
+    # 计算 12 个月前的日期作为过滤下限
+    cutoff = (now - timedelta(days=now.day - 1)).date()  # 当月 1 号
+    cutoff_year = cutoff.year
+    cutoff_month = cutoff.month - 11
+    while cutoff_month <= 0:
+        cutoff_month += 12
+        cutoff_year -= 1
+    cutoff_date = f"{cutoff_year}-{cutoff_month:02d}-01"
+
+    # 数据库聚合查询（加时间过滤避免全表扫描）
     query = db.query(
         func.strftime('%Y-%m', models.ExpenseRecord.incurred_date).label('month'),
         func.sum(models.ExpenseRecord.amount).label('total')
+    ).filter(
+        models.ExpenseRecord.incurred_date >= cutoff_date
     ).group_by('month').order_by('month').all()
 
     db_map = {row.month: float(row.total or 0.0) for row in query}

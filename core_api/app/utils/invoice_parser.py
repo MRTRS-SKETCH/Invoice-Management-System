@@ -120,10 +120,10 @@ def _extract_invoice_type(text: str) -> str:
 
 def _extract_incurred_date(text: str) -> str:
     """
-    匹配 "开票日期：2024年05月20日" 格式，
-    转换为 "YYYY-MM-DD" 返回。
+    匹配 "开票日期：2024年05月20日" / "开票日期: 2024年05月20日" 格式，
+    全角/半角冒号均兼容，转换为 "YYYY-MM-DD" 返回。
     """
-    match = re.search(r"开票日期：(\d{4})年(\d{2})月(\d{2})日", text)
+    match = re.search(r"开票日期[：:]\s*(\d{4})\s*年\s*(\d{2})\s*月\s*(\d{2})\s*日\s*", text)
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
     logger.warning("未匹配到开票日期")
@@ -134,11 +134,6 @@ def _extract_item_name(lines: list[str]) -> str:
     """
     定位 "项目名称 规格型号" 所在行，读取下一行，
     提取开头的 *类别*商品名 部分。
-
-    示例输入:
-        *酒*汾酒精品 53度 500ml*6瓶 箱 2 1325.66 2651.33 13% 344.67
-    提取结果:
-        *酒*汾酒精品
     """
     for i, line in enumerate(lines):
         if "项目名称" in line and "规格型号" in line:
@@ -155,10 +150,10 @@ def _extract_item_name(lines: list[str]) -> str:
 
 def _extract_amount(text: str) -> float:
     """
-    匹配 "（小写）¥2996.00" 或 "（小写）￥1271.50"，
-    提取数字并转为 float。
+    匹配 "（小写）¥2996.00" / "(小写)￥1271.50" 等格式，
+    全角/半角括号均兼容，提取数字并转为 float。
     """
-    match = re.search(r"（小写）[¥￥]\s*([0-9.]+)", text)
+    match = re.search(r"[(（]小写[)）]\s*[¥￥]\s*([0-9.]+)", text)
     if match:
         return float(match.group(1))
     logger.warning("未匹配到开票金额")
@@ -167,12 +162,13 @@ def _extract_amount(text: str) -> float:
 
 def _extract_remark(lines: list[str]) -> str:
     """
-    定位 "价税合计（大写）" 所在行，读取下一行：
+    定位 "价税合计（大写）" / "价税合计(大写)" 所在行，读取下一行：
+      全角/半角括号均兼容。
       - 若下一行为 "备" 或 "注" → 原票无备注，返回 ""
-      - 否则将该行文本作为备注返回（如 "订单号:2007064325443298"）
+      - 否则将该行文本作为备注返回
     """
     for i, line in enumerate(lines):
-        if "价税合计（大写）" in line:
+        if "价税合计（大写）" in line or "价税合计(大写)" in line:
             if i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
                 if next_line in ("备", "注", ""):

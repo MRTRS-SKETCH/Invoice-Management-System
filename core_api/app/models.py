@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Date, Boolean,DateTime
+from sqlalchemy import Column, String, Float, Date, Boolean, DateTime, Index
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -40,6 +40,13 @@ class ExpenseRecord(Base):
     # 屏蔽机制：独立旁路状态，不参与正常流转
     # 屏蔽时记录原状态，取消屏蔽时恢复
     blocked_from_status = Column(String, nullable=True)  # 被屏蔽前的原始状态
+
+    # ── 复合索引：覆盖高频筛选+排序+分组查询模式 ──
+    __table_args__ = (
+        Index('idx_expenses_status_date', 'status', 'incurred_date'),
+        Index('idx_expenses_project_date', 'project_name', 'incurred_date'),
+        Index('idx_expenses_type_date', 'expense_type', 'incurred_date'),
+    )
 
 
 class InvoiceRecord(Base):

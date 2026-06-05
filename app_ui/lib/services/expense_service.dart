@@ -72,8 +72,9 @@ class ExpenseService {
   // 📋 业务流水
   // ═══════════════════════════════════════════════════════════════════
 
-  /// 获取开销流水列表，支持搜索、状态筛选、日期范围、服务端分页
-  static Future<List<dynamic>> fetchExpenses({
+  /// 获取开销流水列表，支持搜索、状态筛选、日期范围、服务端分页。
+  /// 返回 `(items, total)` 记录，total 从 X-Total-Count 响应头读取。
+  static Future<({List<dynamic> items, int total})> fetchExpenses({
     String? search,
     String? status,
     String? dateFrom,
@@ -94,7 +95,9 @@ class ExpenseService {
         .replace(queryParameters: params);
     final resp = await _get(uri);
     _ensureSuccess(resp);
-    return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
+    final items = json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
+    final total = int.tryParse(resp.headers['x-total-count'] ?? '') ?? items.length;
+    return (items: items, total: total);
   }
 
   /// 获取开销流水总数（与 fetchExpenses 共享筛选条件，用于分页控件）

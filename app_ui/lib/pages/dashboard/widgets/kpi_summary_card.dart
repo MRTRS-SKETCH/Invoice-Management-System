@@ -69,8 +69,6 @@ class KpiSummaryCard extends StatelessWidget {
                     title: '30天累计 (元)',
                     value: monthTotal,
                     isPrivacyHidden: isPrivacyHidden,
-                    trend: '↑ 15%',
-                    trendUp: true,
                     color: const Color(0xFF4F46E5),
                   ),
                 ),
@@ -80,8 +78,6 @@ class KpiSummaryCard extends StatelessWidget {
                     title: '待开票 (元)',
                     value: pending,
                     isPrivacyHidden: isPrivacyHidden,
-                    trend: '↓ 8%',
-                    trendUp: false,
                     color: const Color(0xFFEA580C),
                   ),
                 ),
@@ -98,8 +94,6 @@ class KpiSummaryCard extends StatelessWidget {
                     title: '核销中 (元)',
                     value: pendingReimburse,
                     isPrivacyHidden: isPrivacyHidden,
-                    trend: '↑ 2%',
-                    trendUp: true,
                     color: const Color(0xFF0284C7),
                   ),
                 ),
@@ -128,16 +122,14 @@ class _KpiTile extends StatelessWidget {
   final String title;
   final double value;
   final bool isPrivacyHidden;
-  final String? trend;
-  final bool trendUp;
+  final String? trend = null;
+  final bool trendUp = true;
   final Color color;
 
   const _KpiTile({
     required this.title,
     required this.value,
     required this.isPrivacyHidden,
-    this.trend,
-    this.trendUp = true,
     this.color = const Color(0xFF4F46E5),
   });
 

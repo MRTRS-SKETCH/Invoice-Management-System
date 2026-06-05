@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from loguru import logger
@@ -35,13 +35,20 @@ def get_expenses(
     date_from: Optional[str] = Query(None, description="发生日期起始 (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="发生日期截止 (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
+    response: Response = None,
 ):
     try:
-        return crud.get_expenses(
+        items = crud.get_expenses(
             db=db, skip=skip, limit=limit,
             search=search, status=status,
             date_from=date_from, date_to=date_to,
         )
+        total = crud.count_expenses(
+            db=db, search=search, status=status,
+            date_from=date_from, date_to=date_to,
+        )
+        response.headers["X-Total-Count"] = str(total)
+        return items
     except Exception as e:
         logger.opt(exception=True).error("查询开销列表失败")
         raise HTTPException(status_code=500, detail=f"数据查询失败: {str(e)}")

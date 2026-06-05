@@ -51,12 +51,10 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   Timer? _searchDebounce;
 
   // ── 缓存：仅在数据变更时更新，避免 build 中重复计算 ──
-  late ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) _cachedKpi;
   List<String> _cachedProjects = [];
   List<String> _cachedTypes = [];
 
   void _updateComputedCaches() {
-    _cachedKpi = _computeKpi();
     _cachedProjects = _expenses
         .map((e) => e['project_name']?.toString() ?? '')
         .where((s) => s.isNotEmpty)
@@ -116,27 +114,20 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     try {
       final results = await Future.wait([
         ExpenseService.fetchExpenses(skip: 0, limit: 50),
-        ExpenseService.fetchExpenseCount(
-          search: _searchController.text.trim().isEmpty
-              ? null
-              : _searchController.text.trim(),
-          status: _statusFilter,
-          dateFrom: _dateFrom,
-          dateTo: _dateTo,
-        ),
         ExpenseService.fetchDashboardSummary(),
         ExpenseService.fetchHeatmapData(),
         ExpenseService.fetchDistributionData(days: days),
         ExpenseService.fetchTypeDistributionData(days: days),
       ]);
       if (mounted) {
+        final expensesResult = results[0] as ({List<dynamic> items, int total});
         setState(() {
-          _expenses = results[0] as List<dynamic>;
-          _totalExpenseCount = results[1] as int;
-          _summary = results[2] as Map<String, dynamic>;
-          _heatmap = results[3] as List<dynamic>;
-          _distribution = results[4] as List<dynamic>;
-          _typeDistribution = results[5] as List<dynamic>;
+          _expenses = expensesResult.items;
+          _totalExpenseCount = expensesResult.total;
+          _summary = results[1] as Map<String, dynamic>;
+          _heatmap = results[2] as List<dynamic>;
+          _distribution = results[3] as List<dynamic>;
+          _typeDistribution = results[4] as List<dynamic>;
           _isLoading = false;
         });
         _updateComputedCaches();
@@ -149,30 +140,20 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
 
   Future<void> _fetchExpenses({int skip = 0}) async {
     try {
-      final results = await Future.wait([
-        ExpenseService.fetchExpenses(
-          search: _searchController.text.trim().isEmpty
-              ? null
-              : _searchController.text.trim(),
-          status: _statusFilter,
-          dateFrom: _dateFrom,
-          dateTo: _dateTo,
-          skip: skip,
-          limit: 50,
-        ),
-        ExpenseService.fetchExpenseCount(
-          search: _searchController.text.trim().isEmpty
-              ? null
-              : _searchController.text.trim(),
-          status: _statusFilter,
-          dateFrom: _dateFrom,
-          dateTo: _dateTo,
-        ),
-      ]);
+      final result = await ExpenseService.fetchExpenses(
+        search: _searchController.text.trim().isEmpty
+            ? null
+            : _searchController.text.trim(),
+        status: _statusFilter,
+        dateFrom: _dateFrom,
+        dateTo: _dateTo,
+        skip: skip,
+        limit: 50,
+      );
       if (mounted) {
         setState(() {
-          _expenses = results[0] as List<dynamic>;
-          _totalExpenseCount = results[1] as int;
+          _expenses = result.items;
+          _totalExpenseCount = result.total;
         });
         _updateComputedCaches();
       }
@@ -197,20 +178,13 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           skip: 0,
           limit: 50,
         ),
-        ExpenseService.fetchExpenseCount(
-          search: _searchController.text.trim().isEmpty
-              ? null
-              : _searchController.text.trim(),
-          status: _statusFilter,
-          dateFrom: _dateFrom,
-          dateTo: _dateTo,
-        ),
       ]);
       if (!mounted) return;
+      final expensesResult = results[1] as ({List<dynamic> items, int total});
       setState(() {
         _summary = results[0] as Map<String, dynamic>;
-        _expenses = results[1] as List<dynamic>;
-        _totalExpenseCount = results[2] as int;
+        _expenses = expensesResult.items;
+        _totalExpenseCount = expensesResult.total;
       });
       _updateComputedCaches();
     } catch (e) {
@@ -456,34 +430,17 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   // 🏗️ build
   // ═══════════════════════════════════════════════════════════════════
 
-  /// KPI 预计算 — monthTotal 仍需前端计算（30天范围），其他三项来自后端聚合。
-  ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) _computeKpi() {
-    final now = DateTime.now();
-    final cutoff30 = now.subtract(const Duration(days: 30));
-    final cutoffStr =
-        '${cutoff30.year}-${cutoff30.month.toString().padLeft(2, '0')}-${cutoff30.day.toString().padLeft(2, '0')}';
-    double monthTotal = 0;
-    for (final e in _expenses) {
-      final amt = (e['amount'] as num).toDouble();
-      if ((e['incurred_date']?.toString() ?? '').compareTo(cutoffStr) >= 0) monthTotal += amt;
-    }
-    return (
-      monthTotal: monthTotal,
-      pending: (_summary['pending_amount'] as num?)?.toDouble() ?? 0,
-      pendingReimburse: (_summary['pending_reimburse'] as num?)?.toDouble() ?? 0,
-      yearTotal: (_summary['total_amount'] as num?)?.toDouble() ?? 0,
-    );
-  }
-
-  /// 缓存的计算结果 — build 中直接使用，不再每次遍历
-  ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) get _kpi => _cachedKpi;
-
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+
+    // KPI 指标全部来自后端聚合 — 避免 build 内遍历
+    final kpiMonthTotal = (_summary['month_total'] as num?)?.toDouble() ?? 0;
+    final kpiPending = (_summary['pending_amount'] as num?)?.toDouble() ?? 0;
+    final kpiPendingReimburse = (_summary['pending_reimburse'] as num?)?.toDouble() ?? 0;
+    final kpiYearTotal = (_summary['total_amount'] as num?)?.toDouble() ?? 0;
 
     return Scaffold(
       body: Container(
@@ -510,10 +467,10 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                         isPrivacyHidden: _isPrivacyHidden,
                         onPrivacyToggle: () =>
                             setState(() => _isPrivacyHidden = !_isPrivacyHidden),
-                        monthTotal: _kpi.monthTotal,
-                        pending: _kpi.pending,
-                        pendingReimburse: _kpi.pendingReimburse,
-                        yearTotal: _kpi.yearTotal,
+                        monthTotal: kpiMonthTotal,
+                        pending: kpiPending,
+                        pendingReimburse: kpiPendingReimburse,
+                        yearTotal: kpiYearTotal,
                       ),
                     ),
                     const SizedBox(width: 16),

@@ -41,6 +41,7 @@ def init_database(db_dir: str) -> None:
         max_overflow=10,
         pool_recycle=3600,
         pool_timeout=30,
+        pool_pre_ping=True,  # 每次检出连接前发送 SELECT 1，自动检测并替换断连
     )
 
     _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)

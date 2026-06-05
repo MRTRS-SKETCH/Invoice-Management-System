@@ -85,6 +85,7 @@ class DashboardSummary(BaseModel):
     total_amount: float     # 累计报销总额
     pending_amount: float   # 待处理/待开票总额
     pending_reimburse: float  # 待报销+核销中总额（前端免遍历）
+    month_total: float      # 最近 30 天累计金额（前端免遍历）
     invoice_count: int      # 绑定的发票总张数
 
 # 趋势图数据项

@@ -232,13 +232,14 @@ void main() {
       final jsonBody =
           json.encode([fakeExpenseMap(uuuid: 'e1'), fakeExpenseMap(uuuid: 'e2')]);
       when(() => mockClient.get(any()))
-          .thenAnswer((_) async => fakeOk(jsonBody));
+          .thenAnswer((_) async => fakeOk(jsonBody, headers: {'x-total-count': '2'}));
 
       // Act
       final result = await ExpenseService.fetchExpenses();
 
       // Assert
-      expect(result.length, 2);
+      expect(result.items.length, 2);
+      expect(result.total, 2);
     });
   });
 
