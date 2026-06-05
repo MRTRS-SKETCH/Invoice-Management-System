@@ -46,6 +46,27 @@ def get_expenses(
         logger.opt(exception=True).error("查询开销列表失败")
         raise HTTPException(status_code=500, detail=f"数据查询失败: {str(e)}")
 
+
+# 2b. 获取开销总数（用于前端分页 — 与列表接口共享相同的筛选参数）
+@router.get("/count", response_model=schemas.ExpenseCountResponse)
+def get_expenses_count(
+    search: Optional[str] = Query(None, description="按事由模糊搜索"),
+    status: Optional[str] = Query(None, description="按状态筛选"),
+    date_from: Optional[str] = Query(None, description="发生日期起始 (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="发生日期截止 (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+):
+    try:
+        total = crud.count_expenses(
+            db=db,
+            search=search, status=status,
+            date_from=date_from, date_to=date_to,
+        )
+        return schemas.ExpenseCountResponse(total=total)
+    except Exception as e:
+        logger.opt(exception=True).error("查询开销总数失败")
+        raise HTTPException(status_code=500, detail=f"数据查询失败: {str(e)}")
+
 # 3. 局部更新开销记录
 @router.patch("/{uuuid}", response_model=schemas.ExpenseResponse)
 def update_expense(uuuid: str, expense_update: schemas.ExpenseUpdate, db: Session = Depends(get_db)):
@@ -155,13 +176,26 @@ def export_pdfs(request: schemas.ExportPdfsRequest, db: Session = Depends(get_db
             logger.opt(exception=True).error("复制PDF失败 | src={} dest={}", src, dest)
             return None
 
+    # ── 批量预加载：一次查出所有关联数据，消除 N+1 ──
+    expense_map = {
+        e.uuuid: e
+        for e in db.query(models.ExpenseRecord).filter(
+            models.ExpenseRecord.uuuid.in_(request.uuuids)
+        ).all()
+    }
+
+    all_invoices = db.query(models.InvoiceRecord).filter(
+        models.InvoiceRecord.expense_uuuid.in_(request.uuuids)
+    ).all()
+    invoice_map: dict = {}
+    for inv in all_invoices:
+        invoice_map.setdefault(inv.expense_uuuid, []).append(inv)
+
     for uuuid in request.uuuids:
-        # 查询该开销记录的发票类型（用于判断是否属于增值票）
-        expense = db.query(models.ExpenseRecord).filter_by(uuuid=uuuid).first()
+        expense = expense_map.get(uuuid)
         is_vat = expense is not None and expense.invoice_type == "增值票"
 
-        invoices = db.query(models.InvoiceRecord).filter_by(expense_uuuid=uuuid).all()
-        for inv in invoices:
+        for inv in invoice_map.get(uuuid, []):
             try:
                 src = config_manager.resolve_absolute_pdf_path(inv.saved_path)
             except Exception as e:

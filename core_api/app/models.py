@@ -16,7 +16,7 @@ class ExpenseRecord(Base):
     uuuid = Column(String, primary_key=True, default=generate_uuuid, index=True)
 
     # 基础账目信息
-    title = Column(String, nullable=False)  # 开销名称/事由
+    title = Column(String, nullable=False, index=True)  # 开销名称/事由 — 搜索高频列
     amount = Column(Float, nullable=False)  # 金额
     incurred_date = Column(Date, nullable=False, index=True)  # 发生日期 — 排序/范围查询高频列
 
@@ -33,7 +33,7 @@ class ExpenseRecord(Base):
     has_company_invoice = Column(Boolean, default=False)  # 是否有公司发票
     project_name = Column(String, nullable=True, index=True)  # 报销项目名称 — group_by 高频列
     expense_type = Column(String, nullable=True, index=True)   # 开销类型 — group_by 高频列
-    invoice_type = Column(String, nullable=True, default="备注")  # 发票类型：'普票' | '增值票' | '备注'
+    invoice_type = Column(String, nullable=True, default="备注", index=True)  # 发票类型：'普票' | '增值票' | '备注' — 导出筛选列
     remark = Column(String, nullable=True)  # 发票备注信息（订单号等）
     related_persons = Column(String, nullable=True)  # 报销单有关人
 

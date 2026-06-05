@@ -30,6 +30,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
   List<dynamic> _distribution = [];
   List<dynamic> _typeDistribution = [];
   List<dynamic> _expenses = [];
+  int _totalExpenseCount = 0;  // 服务端分页总数
 
   bool _isLoading = true;
   bool _isPrivacyHidden = false;
@@ -48,6 +49,27 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
 
   /// 搜索防抖定时器 — 用户停止输入 300ms 后才发起 API 请求
   Timer? _searchDebounce;
+
+  // ── 缓存：仅在数据变更时更新，避免 build 中重复计算 ──
+  late ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) _cachedKpi;
+  List<String> _cachedProjects = [];
+  List<String> _cachedTypes = [];
+
+  void _updateComputedCaches() {
+    _cachedKpi = _computeKpi();
+    _cachedProjects = _expenses
+        .map((e) => e['project_name']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    _cachedTypes = _expenses
+        .map((e) => e['expense_type']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
 
   @override
   void initState() {
@@ -72,11 +94,11 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     super.dispose();
   }
 
-  // ── 搜索防抖：用户停止输入 300ms 后才触发请求 ──
+  // ── 搜索防抖：用户停止输入 300ms 后才触发请求（重置到第一页） ──
   void _onSearchChanged() {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-      _fetchExpenses();
+      _fetchExpenses(skip: 0);
     });
   }
 
@@ -89,49 +111,73 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       setState(() => _isLoading = true);
     }
 
-    // ── 第一步：先加载流水列表（最快），立即渲染表格 ──
-    try {
-      final expenses = await ExpenseService.fetchExpenses();
-      if (mounted) setState(() { _expenses = expenses; _isLoading = false; });
-    } catch (e) {
-      AppLogger.error('获取流水列表失败', e);
-      if (mounted) setState(() => _isLoading = false);
-    }
+    final days = DualAnalysisCard.daysFor(_analysisTimeRange);
 
-    // ── 第二步：异步加载看板数据（KPI / 热力图 / 分布图），不阻塞 UI ──
     try {
-      final days = DualAnalysisCard.daysFor(_analysisTimeRange);
       final results = await Future.wait([
+        ExpenseService.fetchExpenses(skip: 0, limit: 50),
+        ExpenseService.fetchExpenseCount(
+          search: _searchController.text.trim().isEmpty
+              ? null
+              : _searchController.text.trim(),
+          status: _statusFilter,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        ),
         ExpenseService.fetchDashboardSummary(),
         ExpenseService.fetchHeatmapData(),
         ExpenseService.fetchDistributionData(days: days),
         ExpenseService.fetchTypeDistributionData(days: days),
       ]);
-      if (!mounted) return;
-      setState(() {
-        _summary = results[0] as Map<String, dynamic>;
-        _heatmap = results[1] as List<dynamic>;
-        _distribution = results[2] as List<dynamic>;
-        _typeDistribution = results[3] as List<dynamic>;
-      });
+      if (mounted) {
+        setState(() {
+          _expenses = results[0] as List<dynamic>;
+          _totalExpenseCount = results[1] as int;
+          _summary = results[2] as Map<String, dynamic>;
+          _heatmap = results[3] as List<dynamic>;
+          _distribution = results[4] as List<dynamic>;
+          _typeDistribution = results[5] as List<dynamic>;
+          _isLoading = false;
+        });
+        _updateComputedCaches();
+      }
     } catch (e) {
-      AppLogger.error('获取看板数据失败', e);
+      AppLogger.error('获取数据失败', e);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _fetchExpenses() async {
+  Future<void> _fetchExpenses({int skip = 0}) async {
     try {
-      final data = await ExpenseService.fetchExpenses(
-        search: _searchController.text.trim().isEmpty
-            ? null
-            : _searchController.text.trim(),
-        status: _statusFilter,
-        dateFrom: _dateFrom,
-        dateTo: _dateTo,
-      );
-      if (mounted) setState(() => _expenses = data);
+      final results = await Future.wait([
+        ExpenseService.fetchExpenses(
+          search: _searchController.text.trim().isEmpty
+              ? null
+              : _searchController.text.trim(),
+          status: _statusFilter,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+          skip: skip,
+          limit: 50,
+        ),
+        ExpenseService.fetchExpenseCount(
+          search: _searchController.text.trim().isEmpty
+              ? null
+              : _searchController.text.trim(),
+          status: _statusFilter,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        ),
+      ]);
+      if (mounted) {
+        setState(() {
+          _expenses = results[0] as List<dynamic>;
+          _totalExpenseCount = results[1] as int;
+        });
+        _updateComputedCaches();
+      }
     } catch (e) {
-      _snack('获取流水数据失败: $e', isError: true);
+      if (mounted) _snack('获取流水数据失败: $e', isError: true);
     }
   }
 
@@ -148,13 +194,25 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
           status: _statusFilter,
           dateFrom: _dateFrom,
           dateTo: _dateTo,
+          skip: 0,
+          limit: 50,
+        ),
+        ExpenseService.fetchExpenseCount(
+          search: _searchController.text.trim().isEmpty
+              ? null
+              : _searchController.text.trim(),
+          status: _statusFilter,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
         ),
       ]);
       if (!mounted) return;
       setState(() {
         _summary = results[0] as Map<String, dynamic>;
         _expenses = results[1] as List<dynamic>;
+        _totalExpenseCount = results[2] as int;
       });
+      _updateComputedCaches();
     } catch (e) {
       AppLogger.error('刷新摘要和列表失败', e);
     }
@@ -266,7 +324,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
 
   void _onStatusFilterChanged(String? status) {
     setState(() => _statusFilter = status);
-    _fetchExpenses();
+    _fetchExpenses(skip: 0);
   }
 
   void _onDateRangeChanged(String? from, String? to) {
@@ -274,7 +332,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
       _dateFrom = from;
       _dateTo = to;
     });
-    _fetchExpenses();
+    _fetchExpenses(skip: 0);
   }
 
   /// 时间范围下拉变更 → 自动联动明细表日期区间
@@ -348,18 +406,33 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     int success = 0;
     int fail = 0;
     String? firstNewUuid;
-    for (int i = 0; i < paths.length; i++) {
-      try {
-        final result = await ExpenseService.bindInvoiceAuto(
-          paths[i],
-          projectName: projectName.isEmpty ? null : projectName,
-          expenseType: expenseType.isEmpty ? null : expenseType,
-        );
-        firstNewUuid ??= result['expense_uuuid']?.toString();
-        success++;
-      } catch (e) {
-        AppLogger.error('自动建档失败 | file=${paths[i]}', e);
-        fail++;
+
+    // ── 有限并发（3 路）上传，避免串行瓶颈 ──
+    const concurrency = 3;
+    for (int i = 0; i < paths.length; i += concurrency) {
+      final chunk = paths.skip(i).take(concurrency).toList();
+      final results = await Future.wait(
+        chunk.map((filePath) async {
+          try {
+            final result = await ExpenseService.bindInvoiceAuto(
+              filePath,
+              projectName: projectName.isEmpty ? null : projectName,
+              expenseType: expenseType.isEmpty ? null : expenseType,
+            );
+            return result;
+          } catch (e) {
+            AppLogger.error('自动建档失败 | file=$filePath', e);
+            return null;
+          }
+        }),
+      );
+      for (final result in results) {
+        if (result != null) {
+          firstNewUuid ??= result['expense_uuuid']?.toString();
+          success++;
+        } else {
+          fail++;
+        }
       }
     }
 
@@ -375,51 +448,36 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
     }
   }
 
-  List<String> get _existingProjectNames {
-    final names = _expenses
-        .map((e) => e['project_name']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toSet()
-        .toList();
-    names.sort();
-    return names;
-  }
+  List<String> get _existingProjectNames => _cachedProjects;
 
-  List<String> get _existingTypeNames {
-    final types = _expenses
-        .map((e) => e['expense_type']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toSet()
-        .toList();
-    types.sort();
-    return types;
-  }
+  List<String> get _existingTypeNames => _cachedTypes;
 
   // ═══════════════════════════════════════════════════════════════════
   // 🏗️ build
   // ═══════════════════════════════════════════════════════════════════
 
-  /// KPI 预计算 getter — 单次遍历提取四项指标，避免在 build 中重复遍历
-  ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) get _kpi {
+  /// KPI 预计算 — monthTotal 仍需前端计算（30天范围），其他三项来自后端聚合。
+  ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) _computeKpi() {
     final now = DateTime.now();
     final cutoff30 = now.subtract(const Duration(days: 30));
     final cutoffStr =
         '${cutoff30.year}-${cutoff30.month.toString().padLeft(2, '0')}-${cutoff30.day.toString().padLeft(2, '0')}';
     double monthTotal = 0;
-    double pendingReimburse = 0;
     for (final e in _expenses) {
       final amt = (e['amount'] as num).toDouble();
-      final status = e['status']?.toString() ?? '';
-      if (status == '待报销' || status == '核销中') pendingReimburse += amt;
       if ((e['incurred_date']?.toString() ?? '').compareTo(cutoffStr) >= 0) monthTotal += amt;
     }
     return (
       monthTotal: monthTotal,
       pending: (_summary['pending_amount'] as num?)?.toDouble() ?? 0,
-      pendingReimburse: pendingReimburse,
+      pendingReimburse: (_summary['pending_reimburse'] as num?)?.toDouble() ?? 0,
       yearTotal: (_summary['total_amount'] as num?)?.toDouble() ?? 0,
     );
   }
+
+  /// 缓存的计算结果 — build 中直接使用，不再每次遍历
+  ({double monthTotal, double pending, double pendingReimburse, double yearTotal}) get _kpi => _cachedKpi;
+
 
   @override
   Widget build(BuildContext context) {
@@ -490,6 +548,7 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                       flex: 65,
                       child: ExpenseTablePanel(
                         expenses: _expenses,
+                        totalCount: _totalExpenseCount,
                         selectedUuuids: _selectedUuuids,
                         selectedExpenseUuid: _selectedExpenseUuid,
                         isPrivacyHidden: _isPrivacyHidden,
@@ -505,6 +564,9 @@ class _UnifiedDashboardPageState extends State<UnifiedDashboardPage> {
                         onAddExpenseSubmitted: _refreshSummaryAndExpenses,
                         onStatusFilterChanged: _onStatusFilterChanged,
                         onSearchChanged: _onSearchChanged,
+                        onPageChanged: (skip) => _fetchExpenses(skip: skip),
+                        cachedProjects: _cachedProjects,
+                        cachedTypes: _cachedTypes,
                       ),
                     ),
                     const SizedBox(width: 16),

@@ -159,7 +159,10 @@ class _InvoicePdfPanelState extends State<InvoicePdfPanel> {
             ? ClipRRect(
                 borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(12)),
-                child: SfPdfViewer.file(File(previewPath)),
+                child: SfPdfViewer.file(
+                  File(previewPath),
+                  key: ValueKey(previewPath),
+                ),
               )
             : _buildEmptyState(),
       ),

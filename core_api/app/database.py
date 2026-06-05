@@ -52,6 +52,14 @@ def init_database(db_dir: str) -> None:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
 
+    # ── 连接池预热：消除首个请求的冷启动延迟 ──
+    try:
+        conn = _engine.connect()
+        conn.close()
+        logger.debug("数据库连接池已预热")
+    except Exception as e:
+        logger.warning("连接池预热失败（不影响正常使用）| error={}", e)
+
     logger.info("数据库引擎初始化完成 | path={}", db_path)
 
 

@@ -1,6 +1,6 @@
 import os
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, case
 from loguru import logger
 from app import models, schemas, config_manager
 
@@ -31,14 +31,15 @@ def get_expenses(
     date_to: str | None = None,
 ):
     """获取开销列表（按发生日期倒序排列），支持搜索、状态、日期范围筛选"""
-    logger.info(
+    # 高频路径：降级为 DEBUG，避免刷屏日志文件
+    logger.opt(lazy=True).debug(
         "查询开销列表 | skip={} limit={} | search={} status={} date_from={} date_to={}",
         skip, limit, search, status, date_from, date_to,
     )
     q = db.query(models.ExpenseRecord)
 
     if search:
-        q = q.filter(models.ExpenseRecord.title.ilike(f"%{search}%"))
+        q = q.filter(models.ExpenseRecord.title.like(f"%{search}%"))
     if status:
         q = q.filter(models.ExpenseRecord.status == status)
     if date_from:
@@ -50,6 +51,28 @@ def get_expenses(
             .offset(skip) \
             .limit(limit) \
             .all()
+
+
+def count_expenses(
+    db: Session,
+    search: str | None = None,
+    status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    """获取开销总数（与 get_expenses 共享筛选条件）"""
+    q = db.query(func.count(models.ExpenseRecord.uuuid))
+
+    if search:
+        q = q.filter(models.ExpenseRecord.title.like(f"%{search}%"))
+    if status:
+        q = q.filter(models.ExpenseRecord.status == status)
+    if date_from:
+        q = q.filter(models.ExpenseRecord.incurred_date >= date_from)
+    if date_to:
+        q = q.filter(models.ExpenseRecord.incurred_date <= date_to)
+
+    return q.scalar() or 0
 
 
 def create_expense(db: Session, expense: schemas.ExpenseCreate):
@@ -277,22 +300,34 @@ def delete_invoice(db: Session, uuuid: str) -> bool:
 
 
 def get_dashboard_summary(db: Session) -> dict:
-    """看板汇总统计"""
-    logger.info("查询看板汇总")
-    # 1. 累计报销总额
-    total_amount = db.query(func.sum(models.ExpenseRecord.amount)).scalar() or 0.0
+    """看板汇总统计 — 单条 SQL 聚合，避免多次全表扫描"""
+    logger.opt(lazy=True).debug("查询看板汇总")
+    # 单条查询：同时计算累计总额、待处理金额、待报销/核销中金额
+    result = db.query(
+        func.coalesce(func.sum(models.ExpenseRecord.amount), 0.0).label("total"),
+        func.coalesce(
+            func.sum(
+                func.iif(models.ExpenseRecord.status == "待开票",
+                         models.ExpenseRecord.amount, 0.0)
+            ), 0.0
+        ).label("pending"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (models.ExpenseRecord.status.in_(["待报销", "核销中"]), models.ExpenseRecord.amount),
+                    else_=0.0
+                )
+            ), 0.0
+        ).label("pending_reimburse"),
+    ).first()
 
-    # 2. 待处理金额 (对应你的默认状态 "待开票")
-    pending_amount = db.query(func.sum(models.ExpenseRecord.amount)) \
-                         .filter(models.ExpenseRecord.status == "待开票") \
-                         .scalar() or 0.0
-
-    # 3. 真实发票总数 (直接查你的 InvoiceRecord 物理表！)
-    invoice_count = db.query(func.count(models.InvoiceRecord.uuuid)).scalar() or 0
+    # 发票计数独立查询（避免 JOIN 导致金额行重复）
+    invoice_count = int(db.query(func.count(models.InvoiceRecord.uuuid)).scalar() or 0)
 
     return {
-        "total_amount": float(total_amount),
-        "pending_amount": float(pending_amount),
+        "total_amount": float(result.total),
+        "pending_amount": float(result.pending),
+        "pending_reimburse": float(result.pending_reimburse),
         "invoice_count": invoice_count
     }
 

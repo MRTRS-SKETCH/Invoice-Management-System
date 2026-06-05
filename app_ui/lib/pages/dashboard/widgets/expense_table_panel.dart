@@ -10,6 +10,7 @@ import 'column_width_manager.dart';
 /// 支持列宽拖拽调整，内容居中自动换行，发票类型以图标呈现。
 class ExpenseTablePanel extends StatefulWidget {
   final List<dynamic> expenses;
+  final int totalCount;  // 服务端分页总数
   final Set<String> selectedUuuids;
   final String? selectedExpenseUuid;
   final bool isPrivacyHidden;
@@ -26,10 +27,14 @@ class ExpenseTablePanel extends StatefulWidget {
   final VoidCallback onAddExpenseSubmitted;
   final ValueChanged<String?> onStatusFilterChanged;
   final VoidCallback onSearchChanged;
+  final ValueChanged<int> onPageChanged;  // 新的 skip 值
+  final List<String> cachedProjects;      // 父级缓存的项目列表
+  final List<String> cachedTypes;         // 父级缓存的类型列表
 
   const ExpenseTablePanel({
     super.key,
     required this.expenses,
+    required this.totalCount,
     required this.selectedUuuids,
     required this.selectedExpenseUuid,
     required this.isPrivacyHidden,
@@ -45,6 +50,9 @@ class ExpenseTablePanel extends StatefulWidget {
     required this.onAddExpenseSubmitted,
     required this.onStatusFilterChanged,
     required this.onSearchChanged,
+    required this.onPageChanged,
+    required this.cachedProjects,
+    required this.cachedTypes,
   });
 
   @override
@@ -53,44 +61,47 @@ class ExpenseTablePanel extends StatefulWidget {
 
 class _ExpenseTablePanelState extends State<ExpenseTablePanel>
     with ColumnWidthManager {
-  // ── 分页 ──
+  // ── 服务端分页 ──
   int _currentPage = 0;
   static const int _pageSize = 50;
   bool _searchVisible = false;
 
+  // ── 选中金额缓存 ──
+  double _cachedSelectedTotal = 0.0;
+  // ── 全选状态缓存（避免 build 中 O(n) 遍历）──
+  bool? _cachedAllPageSelected = false;
+
   int get _totalPages =>
-      widget.expenses.isEmpty ? 0 : (widget.expenses.length / _pageSize).ceil();
+      widget.totalCount == 0 ? 0 : (widget.totalCount / _pageSize).ceil();
 
-  List<dynamic> get _pagedExpenses {
-    if (widget.expenses.isEmpty) return [];
-    final start = _currentPage * _pageSize;
-    final end = start + _pageSize;
-    if (start >= widget.expenses.length) {
-      _currentPage = _totalPages - 1;
-      final newStart = _currentPage * _pageSize;
-      return widget.expenses.sublist(
-          newStart, (newStart + _pageSize).clamp(0, widget.expenses.length));
+  List<dynamic> get _pagedExpenses => widget.expenses;
+
+  /// 当前页是否全部选中（null = 部分选中）— 结果缓存，数据变更时刷新
+  bool? get _isAllPageSelected => _cachedAllPageSelected;
+
+  void _recomputeAllPageSelected() {
+    final page = widget.expenses;
+    if (page.isEmpty) {
+      _cachedAllPageSelected = false;
+      return;
     }
-    return widget.expenses.sublist(start, end.clamp(0, widget.expenses.length));
-  }
-
-  /// 当前页是否全部选中（null = 部分选中）
-  bool? get _isAllPageSelected {
-    final page = _pagedExpenses;
-    if (page.isEmpty) return false;
     int selectedCount = 0;
     for (final e in page) {
       if (widget.selectedUuuids.contains(e['uuuid']?.toString())) {
         selectedCount++;
       }
     }
-    if (selectedCount == 0) return false;
-    if (selectedCount == page.length) return true;
-    return null; // 部分选中
+    if (selectedCount == 0) {
+      _cachedAllPageSelected = false;
+    } else if (selectedCount == page.length) {
+      _cachedAllPageSelected = true;
+    } else {
+      _cachedAllPageSelected = null; // 部分选中
+    }
   }
 
   void _toggleSelectAllPage() {
-    final page = _pagedExpenses;
+    final page = widget.expenses;
     if (page.isEmpty) return;
     final updated = Set<String>.from(widget.selectedUuuids);
     if (_isAllPageSelected == true) {
@@ -107,28 +118,41 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
     widget.onMultiSelectChanged(updated);
   }
 
-  List<String> get _existingProjects {
-    return widget.expenses
-        .map((e) => e['project_name']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
-  }
+  List<String> get _existingProjects => widget.cachedProjects;
 
-  List<String> get _existingTypes {
-    return widget.expenses
-        .map((e) => e['expense_type']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
-  }
+  List<String> get _existingTypes => widget.cachedTypes;
 
   @override
   void initState() {
     super.initState();
     loadColumnWidths();
+    _recomputeSelectedTotal();
+    _recomputeAllPageSelected();  // 首次加载时计算缓存
+  }
+
+  @override
+  void didUpdateWidget(covariant ExpenseTablePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 数据变更时重新计算选中金额缓存和全选状态
+    if (oldWidget.selectedUuuids != widget.selectedUuuids ||
+        oldWidget.expenses != widget.expenses) {
+      _recomputeSelectedTotal();
+      _recomputeAllPageSelected();
+    }
+    // 数据源变更（搜索/筛选/日期范围变化）→ 重置到第一页
+    if (oldWidget.expenses != widget.expenses && _currentPage > 0) {
+      _currentPage = 0;
+    }
+  }
+
+  void _recomputeSelectedTotal() {
+    double total = 0;
+    for (final e in widget.expenses) {
+      if (widget.selectedUuuids.contains(e['uuuid']?.toString())) {
+        total += (e['amount'] as num?)?.toDouble() ?? 0;
+      }
+    }
+    _cachedSelectedTotal = total;
   }
 
   @override
@@ -212,20 +236,21 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
   }
 
   // ── 状态批量菜单 ──
+  static const _batchStatusItems = [
+    ('待开票', Colors.orange),
+    ('已开票', Colors.green),
+    ('待报销', Colors.amber),
+    ('核销中', Colors.blue),
+    ('已完结', Colors.purple),
+  ];
+
   Widget _batchStatusMenu() {
-    const items = [
-      ('待开票', Colors.orange),
-      ('已开票', Colors.green),
-      ('待报销', Colors.amber),
-      ('核销中', Colors.blue),
-      ('已完结', Colors.purple),
-    ];
     return PopupMenuButton<String>(
       offset: const Offset(0, 34),
       tooltip: '批量更改状态',
       onSelected: (next) =>
           widget.onBatchUpdateStatus(widget.selectedUuuids, next),
-      itemBuilder: (_) => items.map((e) {
+      itemBuilder: (_) => _batchStatusItems.map((e) {
         return PopupMenuItem<String>(
           value: e.$1,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -748,8 +773,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
         softWrap: true,
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
+        style: _cellBaseStyle.copyWith(
           color: color,
           fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
           fontFamily: monospace ? 'Consolas' : null,
@@ -766,6 +790,8 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
   }
 
   TextStyle _cellStyle() => const TextStyle(fontSize: 12);
+
+  static const _cellBaseStyle = TextStyle(fontSize: 12);
 
   Widget _tag(String text,
       {Color bg = const Color(0xFFF1F5F9),
@@ -849,36 +875,45 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
 
   Widget _statusDropdown(String uuuid, String status, Color color) {
     const allStatuses = ['待开票', '已开票', '待报销', '核销中', '已完结'];
-    return PopupMenuButton<String>(
-      offset: const Offset(0, 32),
-      padding: EdgeInsets.zero,
-      tooltip: '更改状态',
-      onSelected: (next) => widget.onUpdateStatus(uuuid, next),
-      itemBuilder: (_) => allStatuses.map((name) {
-        final c = _statusColors[name] ?? Colors.grey;
-        final isCurrent = name == status;
-        return PopupMenuItem<String>(
-          value: name,
-          enabled: !isCurrent,
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Text(name,
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight:
-                        isCurrent ? FontWeight.bold : FontWeight.normal,
-                    color: isCurrent ? c : Colors.black87)),
-            if (isCurrent) ...[
-              const SizedBox(width: 6),
-              Icon(Icons.check, size: 14, color: c),
-            ],
-          ]),
-        );
-      }).toList(),
+    return GestureDetector(
+      onTapDown: (details) {
+        showMenu<String>(
+          context: context,
+          position: RelativeRect.fromLTRB(
+            details.globalPosition.dx,
+            details.globalPosition.dy + 32,
+            details.globalPosition.dx + 1,
+            details.globalPosition.dy,
+          ),
+          items: allStatuses.map((name) {
+            final c = _statusColors[name] ?? Colors.grey;
+            final isCurrent = name == status;
+            return PopupMenuItem<String>(
+              value: name,
+              enabled: !isCurrent,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
+                const SizedBox(width: 8),
+                Text(name,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            isCurrent ? FontWeight.bold : FontWeight.normal,
+                        color: isCurrent ? c : Colors.black87)),
+                if (isCurrent) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.check, size: 14, color: c),
+                ],
+              ]),
+            );
+          }).toList(),
+        ).then((next) {
+          if (next != null) widget.onUpdateStatus(uuuid, next);
+        });
+      },
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Container(
@@ -907,7 +942,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
     return _statusColors[status] ?? Colors.grey;
   }
 
-  // ── 分页 ──
+  // ── 服务端分页 ──
   Widget _buildPagination() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -922,13 +957,16 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
           IconButton(
             icon: const Icon(Icons.chevron_left, size: 18),
             onPressed:
-                _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                _currentPage > 0 ? () {
+                  setState(() => _currentPage--);
+                  widget.onPageChanged(_currentPage * _pageSize);
+                } : null,
             tooltip: '上一页',
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
-              '第 ${_currentPage + 1} / $_totalPages 页  (共 ${widget.expenses.length} 条)',
+              '第 ${_currentPage + 1} / $_totalPages 页  (共 ${widget.totalCount} 条)',
               style:
                   const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
             ),
@@ -936,7 +974,10 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
           IconButton(
             icon: const Icon(Icons.chevron_right, size: 18),
             onPressed: _currentPage < _totalPages - 1
-                ? () => setState(() => _currentPage++)
+                ? () {
+                    setState(() => _currentPage++);
+                    widget.onPageChanged(_currentPage * _pageSize);
+                  }
                 : null,
             tooltip: '下一页',
           ),
@@ -959,16 +1000,10 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
     );
   }
 
-  // ── 选中金额汇总底栏 ──
+  // ── 选中金额汇总底栏（缓存计算，仅在多选变更时更新） ──
   Widget _buildSelectionFooter() {
-    double total = 0;
-    for (final e in widget.expenses) {
-      if (widget.selectedUuuids.contains(e['uuuid']?.toString())) {
-        total += (e['amount'] as num?)?.toDouble() ?? 0;
-      }
-    }
-    final lower = total.toStringAsFixed(2);
-    final upper = toChineseUppercase(total);
+    final lower = _cachedSelectedTotal.toStringAsFixed(2);
+    final upper = toChineseUppercase(_cachedSelectedTotal);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1019,9 +1054,16 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
 // 🔢 人民币大写转换
 // ═══════════════════════════════════════════════════════════════════
 
+/// 缓存最近的大写转换结果，避免重复计算
+final Map<double, String> _uppercaseCache = {};
+
 /// 将金额转换为中文财务大写（如 12345.67 → 壹万贰仟叁佰肆拾伍元陆角柒分）
 String toChineseUppercase(double amount) {
-  if (amount < 0.005) return '零元整';
+  // 优先命中缓存（常见金额如每月固定开销重复出现）
+  final cached = _uppercaseCache[amount];
+  if (cached != null) return cached;
+
+  if (amount < 0.005) return _cachePut(amount, '零元整');
 
   const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
   const units = ['', '拾', '佰', '仟'];
@@ -1095,5 +1137,13 @@ String toChineseUppercase(double amount) {
     if (fen > 0) result += '${digits[fen]}分';
   }
 
-  return result;
+  return _cachePut(amount, result);
+}
+
+String _cachePut(double key, String value) {
+  // LRU 简单策略：缓存最多 50 条
+  if (_uppercaseCache.length >= 50) {
+    _uppercaseCache.remove(_uppercaseCache.keys.first);
+  }
+  return _uppercaseCache[key] = value;
 }

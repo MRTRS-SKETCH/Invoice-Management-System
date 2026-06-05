@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app_ui/pages/dashboard/widgets/dual_analysis_card.dart';
 import '../helpers/test_helper.dart';
@@ -25,7 +24,7 @@ void main() {
         typeDistribution: typeDistribution,
         analysisTimeRange: '近30天',
         onTimeRangeChanged: (_) {},
-        onDateRangeChanged: (_, __) {},
+        onDateRangeChanged: (_, _) {},
       );
 
       // Act
@@ -45,7 +44,7 @@ void main() {
         typeDistribution: [],
         analysisTimeRange: '近30天',
         onTimeRangeChanged: (_) {},
-        onDateRangeChanged: (_, __) {},
+        onDateRangeChanged: (_, _) {},
       );
 
       // Act
@@ -65,7 +64,7 @@ void main() {
         typeDistribution: [],
         analysisTimeRange: '近30天',
         onTimeRangeChanged: (_) {},
-        onDateRangeChanged: (_, __) {},
+        onDateRangeChanged: (_, _) {},
       );
 
       // Act
@@ -83,7 +82,7 @@ void main() {
         typeDistribution: [],
         analysisTimeRange: '近30天',
         onTimeRangeChanged: (v) => selected = v,
-        onDateRangeChanged: (_, __) {},
+        onDateRangeChanged: (_, _) {},
       );
 
       // Act

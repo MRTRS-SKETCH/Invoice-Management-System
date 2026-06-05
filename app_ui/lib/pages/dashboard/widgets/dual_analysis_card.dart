@@ -312,7 +312,11 @@ class _DualAnalysisCardState extends State<DualAnalysisCard> {
   /// 环形图 + 下方图例
   static Widget _buildDonutWithLegend(
       List<dynamic> data, List<Color> colors) {
-    return Column(
+    // 用数据哈希做 key，只在数据变化时重建
+    final dataKey = ValueKey(data.hashCode);
+    return RepaintBoundary(
+      key: dataKey,
+      child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         SizedBox(
@@ -365,6 +369,7 @@ class _DualAnalysisCardState extends State<DualAnalysisCard> {
           }).toList(),
         ),
       ],
-    );
+    ),
+  );
   }
 }

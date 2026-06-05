@@ -28,6 +28,11 @@ class ExpenseCreate(ExpenseBase):
     pass
 
 
+# ── 服务端分页计数 ──
+class ExpenseCountResponse(BaseModel):
+    total: int = Field(..., description="符合条件的开销记录总数")
+
+
 # 2. 局部更新 (PATCH) 校验：全部变为 Optional，前端传什么就改什么
 class ExpenseUpdate(BaseModel):
     title: Optional[str] = None
@@ -79,6 +84,7 @@ class InvoiceResponse(BaseModel):
 class DashboardSummary(BaseModel):
     total_amount: float     # 累计报销总额
     pending_amount: float   # 待处理/待开票总额
+    pending_reimburse: float  # 待报销+核销中总额（前端免遍历）
     invoice_count: int      # 绑定的发票总张数
 
 # 趋势图数据项

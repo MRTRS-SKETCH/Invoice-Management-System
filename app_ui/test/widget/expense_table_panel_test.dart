@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_ui/pages/dashboard/widgets/expense_table_panel.dart';
 import '../helpers/test_helper.dart';
 import '../helpers/mock_clients.dart';
@@ -10,6 +9,7 @@ import '../helpers/mock_clients.dart';
 Future<void> pumpTablePanel(
   WidgetTester tester, {
   List<dynamic> expenses = const [],
+  int totalCount = 0,
   Set<String> selectedUuuids = const {},
   String? selectedExpenseUuid,
   bool isPrivacyHidden = false,
@@ -25,11 +25,15 @@ Future<void> pumpTablePanel(
   VoidCallback? onAddExpenseSubmitted,
   ValueChanged<String?>? onStatusFilterChanged,
   VoidCallback? onSearchChanged,
+  ValueChanged<int>? onPageChanged,
+  List<String>? cachedProjects,
+  List<String>? cachedTypes,
 }) async {
   await pumpTestWidget(
     tester,
     ExpenseTablePanel(
       expenses: expenses,
+      totalCount: totalCount,
       selectedUuuids: selectedUuuids,
       selectedExpenseUuid: selectedExpenseUuid,
       isPrivacyHidden: isPrivacyHidden,
@@ -37,14 +41,17 @@ Future<void> pumpTablePanel(
       searchController: searchController ?? TextEditingController(),
       onSelectRowChanged: onSelectRowChanged ?? (_) {},
       onMultiSelectChanged: onMultiSelectChanged ?? (_) {},
-      onUpdateStatus: onUpdateStatus ?? (_, __) {},
-      onBatchUpdateStatus: onBatchUpdateStatus ?? (_, __) {},
+      onUpdateStatus: onUpdateStatus ?? (_, _) {},
+      onBatchUpdateStatus: onBatchUpdateStatus ?? (_, _) {},
       onBlockExpense: onBlockExpense ?? (_) {},
       onUnblockExpense: onUnblockExpense ?? (_) {},
       onDeleteExpense: onDeleteExpense ?? (_) {},
       onAddExpenseSubmitted: onAddExpenseSubmitted ?? () {},
       onStatusFilterChanged: onStatusFilterChanged ?? (_) {},
       onSearchChanged: onSearchChanged ?? () {},
+      onPageChanged: onPageChanged ?? (_) {},
+      cachedProjects: cachedProjects ?? [],
+      cachedTypes: cachedTypes ?? [],
     ),
   );
 }
@@ -88,11 +95,11 @@ void main() {
     });
 
     testWidgets('51 条应显示分页', (tester) async {
-      // Arrange
-      final data = List.generate(51, (i) => fakeExpenseMap(uuuid: 'exp-$i'));
+      // Arrange — 服务端分页：50 条当前页 + totalCount=51 驱动分页控件
+      final data = List.generate(50, (i) => fakeExpenseMap(uuuid: 'exp-$i'));
 
       // Act
-      await pumpTablePanel(tester, expenses: data);
+      await pumpTablePanel(tester, expenses: data, totalCount: 51);
 
       // Assert
       expect(find.textContaining('第 1 /'), findsOneWidget);

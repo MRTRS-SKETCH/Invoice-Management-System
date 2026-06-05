@@ -18,6 +18,7 @@ class _HeatmapCardState extends State<HeatmapCard> {
   final ScrollController _scrollCtrl = ScrollController();
   bool _didInitialScroll = false;
   double _lastGridWidth = 0;
+  bool _callbackScheduled = false;
 
   @override
   void didUpdateWidget(covariant HeatmapCard oldWidget) {
@@ -77,9 +78,15 @@ class _HeatmapCardState extends State<HeatmapCard> {
                           (columns - 1) * spacing;
                       final fitsInView = gridWidth < constraints.maxWidth;
 
-                      // 每次布局时尝试滚动到最新（右侧）
-                      WidgetsBinding.instance
-                          .addPostFrameCallback((_) => _tryScrollToLatest(gridWidth: gridWidth));
+                      // 每次布局时尝试滚动到最新（右侧），用 guard 防重复注册
+                      if (!_callbackScheduled) {
+                        _callbackScheduled = true;
+                        WidgetsBinding.instance
+                            .addPostFrameCallback((_) {
+                          _callbackScheduled = false;
+                          _tryScrollToLatest(gridWidth: gridWidth);
+                        });
+                      }
 
                       final grid = RepaintBoundary(
                         child: GridView.builder(

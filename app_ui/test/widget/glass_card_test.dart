@@ -23,8 +23,8 @@ void main() {
     testWidgets('自定义 padding 不应报错', (tester) async {
       // Arrange
       const card = GlassCard(
-        child: Text('Test'),
         padding: EdgeInsets.symmetric(horizontal: 32),
+        child: Text('Test'),
       );
 
       // Act
@@ -37,8 +37,8 @@ void main() {
     testWidgets('自定义 borderRadius 不应报错', (tester) async {
       // Arrange
       const card = GlassCard(
-        child: Text('Round'),
         borderRadius: BorderRadius.all(Radius.circular(24)),
+        child: Text('Round'),
       );
 
       // Act

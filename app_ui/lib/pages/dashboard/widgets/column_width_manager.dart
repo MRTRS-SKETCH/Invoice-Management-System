@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../../services/config_storage.dart';
 
 /// 列宽持久化管理 mixin
 ///
@@ -47,11 +47,10 @@ mixin ColumnWidthManager<T extends StatefulWidget> on State<T> {
     };
   }
 
-  /// 从 SharedPreferences 恢复已保存的列宽
-  Future<void> loadColumnWidths([SharedPreferences? prefs]) async {
+  /// 从 config/preferences.json 恢复已保存的列宽
+  void loadColumnWidths() {
     try {
-      prefs ??= await SharedPreferences.getInstance();
-      final raw = prefs.getString(_colWidthsKey);
+      final raw = ConfigStorage.instance.getString(_colWidthsKey);
       if (raw != null) {
         final decoded = json.decode(raw) as Map<String, dynamic>;
         setState(() {
@@ -65,13 +64,13 @@ mixin ColumnWidthManager<T extends StatefulWidget> on State<T> {
     }
   }
 
-  /// 保存当前列宽到 SharedPreferences
-  Future<void> saveColumnWidths([SharedPreferences? prefs]) async {
+  /// 保存当前列宽到 config/preferences.json
+  void saveColumnWidths() {
     try {
-      prefs ??= await SharedPreferences.getInstance();
       final encoded =
           json.encode(columnWidths.map((k, v) => MapEntry(k.toString(), v)));
-      await prefs.setString(_colWidthsKey, encoded);
+      ConfigStorage.instance.setString(_colWidthsKey, encoded);
+      _loadedSavedWidths = true;
     } catch (_) {
       // 保存失败静默忽略
     }

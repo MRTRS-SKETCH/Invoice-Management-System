@@ -31,7 +31,6 @@ id_rsa.pub
 # ==========================================
 # Python 字节码与缓存
 __pycache__/
-core_api/__pycache__/
 *.py[codz]
 *$py.class
 *.so
@@ -71,6 +70,7 @@ MANIFEST
 /target
 target/
 __pypackages__/
+.pytest_cache/
 
 # Windows 临时编译产物与缓存
 **/windows/flutter/ephemeral/

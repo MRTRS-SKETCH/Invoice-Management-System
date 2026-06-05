@@ -190,10 +190,11 @@ void main() {
       expect(q['status'], '待报销');
       expect(q['date_from'], '2025-01-01');
       expect(q['date_to'], '2025-06-30');
-      expect(q['limit'], '200');
+      expect(q['limit'], '50');
+      expect(q['skip'], '0');
     });
 
-    test('不带可选参数时仅含 limit', () async {
+    test('不带可选参数时仅含 skip 和 limit', () async {
       // Arrange
       Uri? capturedUri;
       when(() => mockClient.get(any())).thenAnswer((invocation) async {
@@ -206,7 +207,8 @@ void main() {
 
       // Assert
       final q = capturedUri!.queryParameters;
-      expect(q['limit'], '200');
+      expect(q['limit'], '50');
+      expect(q['skip'], '0');
       expect(q.containsKey('search'), isFalse);
     });
 

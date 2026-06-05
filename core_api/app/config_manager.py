@@ -131,26 +131,57 @@ def _get_pdf_dir(cfg: dict, shard: int | None = None) -> Path:
 
 
 def next_pdf_shard_if_needed() -> Path:
-    """检查当前 PDF 目录是否已满，满则切换到下一分片并返回新目录"""
+    """检查当前 PDF 目录是否已满，满则切换到下一分片并返回新目录。
+    
+    优化：单次 load_config → 决定 → 单次持久化，避免重复读写。
+    """
     cfg = load_config()
     shard = cfg.get("current_pdf_shard", 0)
-    count = _count_files_in_dir(_get_pdf_dir(cfg, shard))
+    pdf_dir = _get_pdf_dir(cfg, shard)
+    count = _count_files_in_dir(pdf_dir)
 
     if count >= cfg.get("pdf_shard_size", _DEFAULT_PDF_SHARD_SIZE):
         shard += 1
+        count = 0
+        pdf_dir = _get_pdf_dir(cfg, shard)
         logger.info("PDF 目录分片递增 | new_shard={}", shard)
-        update_shard_state(shard, 0)
-        return _get_pdf_dir(cfg, shard)
 
-    # 更新计数（不影响分片号）
-    update_shard_state(shard, count)
-    return _get_pdf_dir(cfg, shard)
+    # 仅在分片号或文件数变化时持久化
+    if shard != cfg.get("current_pdf_shard") or count != cfg.get("shard_file_count"):
+        _update_shard_inplace(shard, count)
+
+    return pdf_dir
+
+
+def _update_shard_inplace(shard: int, count: int) -> None:
+    """直接更新内存缓存 + 持久化（不重复 load_config）"""
+    global _config_cache
+    if _config_cache is None:
+        _config_cache = load_config()
+    _config_cache["current_pdf_shard"] = shard
+    _config_cache["shard_file_count"] = count
+    _save_raw(_config_cache)
+
+
+# ── 缓存 db_path 解析，避免循环中重复 load_config() ──
+_cached_db_path: Path | None = None
+_cached_db_path_str: str | None = None
+
+
+def _get_db_path_fast() -> Path:
+    """获取缓存的 db_path（跟随 load_config 自动刷新）"""
+    global _cached_db_path, _cached_db_path_str
+    cfg = load_config()
+    current = cfg["db_path"]
+    if _cached_db_path_str != current:
+        _cached_db_path = Path(current)
+        _cached_db_path_str = current
+    return _cached_db_path
 
 
 def resolve_absolute_pdf_path(saved_path: str) -> Path:
     """将数据库中的相对路径（如 user_data/pdfs/xxx.pdf）解析为绝对路径"""
-    cfg = load_config()
-    db_path = Path(cfg["db_path"])
+    db_path = _get_db_path_fast()
     # saved_path 格式: "user_data/pdfs/xxx.pdf" 或 "user_data/pdfs_1/xxx.pdf"
     rel = saved_path
     if rel.startswith("user_data/"):
@@ -259,14 +290,18 @@ def _prebuild_structure(db_path: str, log_path: str) -> None:
 
 def _save_raw(cfg: dict) -> None:
     """原子写入 config.json（确保 config/ 目录存在）"""
+    import os as _os
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     tmp = _CONFIG_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(_CONFIG_PATH)
+    _os.replace(tmp, _CONFIG_PATH)  # 平台原子替换（优于 Path.replace）
 
 
 def _count_files_in_dir(directory: Path) -> int:
-    """统计目录下文件数量（不含子目录）"""
-    if not directory.exists():
+    """统计目录下文件数量（不含子目录）— 使用 os.scandir 避免额外 stat 调用"""
+    import os
+    try:
+        with os.scandir(directory) as it:
+            return sum(1 for entry in it if entry.is_file())
+    except FileNotFoundError:
         return 0
-    return sum(1 for f in directory.iterdir() if f.is_file())
