@@ -19,6 +19,11 @@ class AppLogger {
   AppLogger._();
 
   static final List<Map<String, String>> _buffer = [];
+
+  /// 测试可见：当前缓冲中的日志数量
+  @visibleForTesting
+  static int get bufferLength => _buffer.length;
+
   static Timer? _timer;
   static bool _flushing = false;
 

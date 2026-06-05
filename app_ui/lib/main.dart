@@ -20,6 +20,14 @@ Completer<void> _backendReadyCompleter = Completer<void>();
 /// 供 Dashboard 在 initState 中 await，确保后端 HTTP 服务已可接受连接
 Future<void> get backendReady => _backendReadyCompleter.future;
 
+/// 测试可见：强制完成 backendReady 信号（模拟后端已就绪）
+@visibleForTesting
+void forceBackendReady() {
+  if (!_backendReadyCompleter.isCompleted) {
+    _backendReadyCompleter.complete();
+  }
+}
+
 /// 获取 api_server/ 工作目录
 String get _backendDir {
   if (kDebugMode) {

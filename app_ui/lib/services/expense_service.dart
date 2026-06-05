@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config.dart';
 
@@ -9,20 +10,32 @@ import '../config.dart';
 class ExpenseService {
   static String get _base => AppConfig.baseUrl;
 
+  // ── 测试注入：允许测试用例替换 HTTP 客户端 ──
+  static http.Client? _clientOverride;
+
+  @visibleForTesting
+  static set client(http.Client? c) => _clientOverride = c;
+
+  /// 测试可见：获取当前注入的 HTTP 客户端（null = 使用默认）
+  @visibleForTesting
+  static http.Client? get client => _clientOverride;
+
+  static http.Client get _client => _clientOverride ?? http.Client();
+
   // ═══════════════════════════════════════════════════════════════════
   // 📊 看板数据
   // ═══════════════════════════════════════════════════════════════════
 
   /// 获取 KPI 汇总卡片数据
   static Future<Map<String, dynamic>> fetchDashboardSummary() async {
-    final resp = await http.get(Uri.parse('$_base/api/dashboard/summary'));
+    final resp = await _client.get(Uri.parse('$_base/api/dashboard/summary'));
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
   }
 
   /// 获取近 90 天每日开销频次热力图数据
   static Future<List<dynamic>> fetchHeatmapData() async {
-    final resp = await http.get(Uri.parse('$_base/api/dashboard/heatmap'));
+    final resp = await _client.get(Uri.parse('$_base/api/dashboard/heatmap'));
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
@@ -33,7 +46,7 @@ class ExpenseService {
     if (days != null) params['days'] = days.toString();
     final uri = Uri.parse('$_base/api/dashboard/distribution')
         .replace(queryParameters: params.isEmpty ? null : params);
-    final resp = await http.get(uri);
+    final resp = await _client.get(uri);
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
@@ -44,7 +57,7 @@ class ExpenseService {
     if (days != null) params['days'] = days.toString();
     final uri = Uri.parse('$_base/api/dashboard/type-distribution')
         .replace(queryParameters: params.isEmpty ? null : params);
-    final resp = await http.get(uri);
+    final resp = await _client.get(uri);
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
@@ -68,7 +81,7 @@ class ExpenseService {
 
     final uri = Uri.parse('$_base/api/expenses/')
         .replace(queryParameters: params);
-    final resp = await http.get(uri);
+    final resp = await _client.get(uri);
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as List<dynamic>;
   }
@@ -78,7 +91,7 @@ class ExpenseService {
   /// [data] 需包含 title, amount, incurred_date, status 等字段。
   /// 返回 true 表示创建成功。
   static Future<bool> addExpense(Map<String, dynamic> data) async {
-    final resp = await http.post(
+    final resp = await _client.post(
       Uri.parse('$_base/api/expenses/'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode(data),
@@ -92,7 +105,7 @@ class ExpenseService {
   /// [uuuid] 流水主键，[nextStatus] 目标状态（须符合后端白名单）
   static Future<bool> updateExpenseStatus(
       String uuuid, String nextStatus) async {
-    final resp = await http.patch(
+    final resp = await _client.patch(
       Uri.parse('$_base/api/expenses/$uuuid'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'status': nextStatus}),
@@ -104,7 +117,7 @@ class ExpenseService {
 
   /// 物理删除一条开销记录（后端自动级联删除关联发票 + PDF）
   static Future<bool> deleteExpense(String uuuid) async {
-    final resp = await http.delete(Uri.parse('$_base/api/expenses/$uuuid'));
+    final resp = await _client.delete(Uri.parse('$_base/api/expenses/$uuuid'));
     if (resp.statusCode == 200) return true;
     throw Exception('删除失败: ${resp.statusCode}');
   }
@@ -116,7 +129,7 @@ class ExpenseService {
   /// 后端会在 targetDir 下创建 YYYY-MM-DD/全部发票/ 和 YYYY-MM-DD/增值票/ 两个子文件夹。
   static Future<Map<String, dynamic>> exportPdfs(
       Set<String> uuuids, String targetDir) async {
-    final resp = await http.post(
+    final resp = await _client.post(
       Uri.parse('$_base/api/expenses/export-pdfs'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
@@ -134,7 +147,7 @@ class ExpenseService {
   /// 屏蔽一条开销记录（独立旁路，不影响正常状态流转）
   static Future<bool> blockExpense(String uuuid) async {
     final resp =
-        await http.post(Uri.parse('$_base/api/expenses/$uuuid/block'));
+        await _client.post(Uri.parse('$_base/api/expenses/$uuuid/block'));
     if (resp.statusCode == 200) return true;
     throw Exception('屏蔽失败: ${resp.statusCode}');
   }
@@ -142,7 +155,7 @@ class ExpenseService {
   /// 取消屏蔽，恢复到屏蔽前的原始状态
   static Future<bool> unblockExpense(String uuuid) async {
     final resp =
-        await http.post(Uri.parse('$_base/api/expenses/$uuuid/unblock'));
+        await _client.post(Uri.parse('$_base/api/expenses/$uuuid/unblock'));
     if (resp.statusCode == 200) return true;
     throw Exception('取消屏蔽失败: ${resp.statusCode}');
   }
@@ -153,7 +166,7 @@ class ExpenseService {
 
   /// 查询某条流水绑定的所有发票
   static Future<List<dynamic>> fetchBoundInvoices(String expenseUuuid) async {
-    final resp = await http.get(
+    final resp = await _client.get(
       Uri.parse('$_base/api/invoices/by-expense/$expenseUuuid'),
     );
     _ensureSuccess(resp);
@@ -163,7 +176,7 @@ class ExpenseService {
   /// 将本地 PDF 文件绑定到指定流水（手动选定条目模式）
   static Future<bool> bindInvoice(
       String expenseUuuid, String sourceFilePath) async {
-    final resp = await http.post(
+    final resp = await _client.post(
       Uri.parse('$_base/api/invoices/bind'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
@@ -194,7 +207,7 @@ class ExpenseService {
     if (expenseType != null && expenseType.isNotEmpty) {
       body['expense_type'] = expenseType;
     }
-    final resp = await http.post(
+    final resp = await _client.post(
       Uri.parse('$_base/api/invoices/bind'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode(body),
@@ -209,7 +222,7 @@ class ExpenseService {
   /// 解绑并删除单张发票（含物理 PDF）
   static Future<bool> deleteInvoice(String invoiceUuuid) async {
     final resp =
-        await http.delete(Uri.parse('$_base/api/invoices/$invoiceUuuid'));
+        await _client.delete(Uri.parse('$_base/api/invoices/$invoiceUuuid'));
     if (resp.statusCode == 200) return true;
     throw Exception('解绑失败: ${resp.statusCode}');
   }
@@ -220,7 +233,7 @@ class ExpenseService {
 
   /// 获取当前路径配置
   static Future<Map<String, dynamic>> fetchSettingsPaths() async {
-    final resp = await http.get(Uri.parse('$_base/api/settings/paths'));
+    final resp = await _client.get(Uri.parse('$_base/api/settings/paths'));
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
   }
@@ -228,7 +241,7 @@ class ExpenseService {
   /// 更新数据库/日志路径（需重启生效）
   static Future<Map<String, dynamic>> updateSettingsPaths(
       String dbPath, String logPath) async {
-    final resp = await http.put(
+    final resp = await _client.put(
       Uri.parse('$_base/api/settings/paths'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'db_path': dbPath, 'log_path': logPath}),
@@ -243,7 +256,7 @@ class ExpenseService {
   /// 预览校验路径（不保存）
   static Future<Map<String, dynamic>> validatePaths(
       String dbPath, String logPath) async {
-    final resp = await http.post(
+    final resp = await _client.post(
       Uri.parse('$_base/api/settings/validate'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'db_path': dbPath, 'log_path': logPath}),
@@ -255,7 +268,7 @@ class ExpenseService {
   /// 预览目录结构（不实际创建）
   static Future<Map<String, dynamic>> previewPaths(
       String dbPath, String logPath) async {
-    final resp = await http.post(
+    final resp = await _client.post(
       Uri.parse('$_base/api/settings/preview'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'db_path': dbPath, 'log_path': logPath}),
@@ -266,7 +279,7 @@ class ExpenseService {
 
   /// 请求后端重启信号
   static Future<Map<String, dynamic>> requestRestart() async {
-    final resp = await http.post(Uri.parse('$_base/api/settings/restart'));
+    final resp = await _client.post(Uri.parse('$_base/api/settings/restart'));
     _ensureSuccess(resp);
     return json.decode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
   }

@@ -48,9 +48,9 @@ mixin ColumnWidthManager<T extends StatefulWidget> on State<T> {
   }
 
   /// 从 SharedPreferences 恢复已保存的列宽
-  Future<void> loadColumnWidths() async {
+  Future<void> loadColumnWidths([SharedPreferences? prefs]) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      prefs ??= await SharedPreferences.getInstance();
       final raw = prefs.getString(_colWidthsKey);
       if (raw != null) {
         final decoded = json.decode(raw) as Map<String, dynamic>;
@@ -66,9 +66,9 @@ mixin ColumnWidthManager<T extends StatefulWidget> on State<T> {
   }
 
   /// 保存当前列宽到 SharedPreferences
-  Future<void> saveColumnWidths() async {
+  Future<void> saveColumnWidths([SharedPreferences? prefs]) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      prefs ??= await SharedPreferences.getInstance();
       final encoded =
           json.encode(columnWidths.map((k, v) => MapEntry(k.toString(), v)));
       await prefs.setString(_colWidthsKey, encoded);

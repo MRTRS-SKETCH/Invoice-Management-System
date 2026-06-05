@@ -968,7 +968,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
       }
     }
     final lower = total.toStringAsFixed(2);
-    final upper = _toChineseUppercase(total);
+    final upper = toChineseUppercase(total);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1020,7 +1020,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
 // ═══════════════════════════════════════════════════════════════════
 
 /// 将金额转换为中文财务大写（如 12345.67 → 壹万贰仟叁佰肆拾伍元陆角柒分）
-String _toChineseUppercase(double amount) {
+String toChineseUppercase(double amount) {
   if (amount < 0.005) return '零元整';
 
   const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
