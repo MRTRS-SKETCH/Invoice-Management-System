@@ -71,6 +71,11 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
   // ── 全选状态缓存（避免 build 中 O(n) 遍历）──
   bool? _cachedAllPageSelected = false;
 
+  // ── 内联编辑状态 ──
+  (String, int)? _editingCell;       // (uuuid, colIndex) — 当前正在编辑的单元格
+  TextEditingController? _editCtrl;  // 文本类编辑的控制器
+  FocusNode? _editFocus;             // 文本类编辑的焦点
+
   int get _totalPages =>
       widget.totalCount == 0 ? 0 : (widget.totalCount / _pageSize).ceil();
 
@@ -157,6 +162,8 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
 
   @override
   void dispose() {
+    _editCtrl?.dispose();
+    _editFocus?.dispose();
     super.dispose();
   }
 
@@ -542,6 +549,260 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // ✏️ 内联编辑
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// 列索引 → API 字段名
+  static String _colFieldName(int colIndex) {
+    const map = {
+      0: 'invoice_type',
+      1: 'incurred_date',
+      2: 'title',
+      3: 'amount',
+      5: 'project_name',
+      6: 'expense_type',
+      7: 'remark',
+    };
+    return map[colIndex] ?? '';
+  }
+
+  /// 进入文本编辑模式
+  void _startTextEdit(String uuuid, int colIndex, String initialValue) {
+    _editCtrl?.dispose();
+    _editFocus?.dispose();
+    _editCtrl = TextEditingController(text: initialValue);
+    _editFocus = FocusNode();
+    setState(() => _editingCell = (uuuid, colIndex));
+    // 下一帧请求焦点
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _editFocus?.requestFocus();
+    });
+  }
+
+  /// 提交文本编辑 → 调用 API → 退出编辑
+  Future<void> _commitTextEdit() async {
+    final cell = _editingCell;
+    if (cell == null || _editCtrl == null) return;
+    final (uuuid, colIndex) = cell;
+    final field = _colFieldName(colIndex);
+    final rawValue = _editCtrl!.text.trim();
+    if (field.isEmpty || rawValue.isEmpty) {
+      _cancelEdit();
+      return;
+    }
+    try {
+      dynamic value = rawValue;
+      if (field == 'amount') {
+        value = double.tryParse(rawValue);
+        if (value == null) { _cancelEdit(); return; }
+      }
+      await ExpenseService.updateExpense(uuuid, {field: value});
+      _cancelEdit();
+      widget.onAddExpenseSubmitted();
+    } catch (e) {
+      _cancelEdit();
+      _showSnack('保存失败: $e', isError: true);
+    }
+  }
+
+  /// 提交特殊编辑（发票类型/日期） → 调用 API → 退出编辑
+  Future<void> _commitSpecialEdit(String uuuid, int colIndex, dynamic value) async {
+    final field = _colFieldName(colIndex);
+    if (field.isEmpty) return;
+    try {
+      await ExpenseService.updateExpense(uuuid, {field: value});
+      _cancelEdit();
+      widget.onAddExpenseSubmitted();
+    } catch (e) {
+      _cancelEdit();
+      _showSnack('保存失败: $e', isError: true);
+    }
+  }
+
+  /// 取消编辑
+  void _cancelEdit() {
+    _editCtrl?.dispose();
+    _editCtrl = null;
+    _editFocus?.dispose();
+    _editFocus = null;
+    setState(() => _editingCell = null);
+  }
+
+  /// 判断某个单元格是否处于编辑态
+  bool _isEditing(String uuuid, int colIndex) =>
+      _editingCell != null &&
+      _editingCell!.$1 == uuuid &&
+      _editingCell!.$2 == colIndex;
+
+  // ── 内联编辑单元格构建器 ──
+
+  /// 发票类型列 (col 0) — 双击弹出选择菜单
+  Widget _buildInvoiceTypeCell(double width, String uuuid, String invoiceType) {
+    return GestureDetector(
+      onDoubleTap: () => _showInvoiceTypePicker(uuuid, invoiceType),
+      child: _cellWidget(width, _invoiceTypeIcon(invoiceType)),
+    );
+  }
+
+  void _showInvoiceTypePicker(String uuuid, String current) {
+    showMenu<String>(
+      context: context,
+      position: const RelativeRect.fromLTRB(200, 300, 201, 301), // 大致居中
+      items: ['普票', '增值票', '备注'].map((t) {
+        final isCurrent = t == current;
+        return PopupMenuItem<String>(
+          value: t,
+          enabled: !isCurrent,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (isCurrent) const Icon(Icons.check, size: 14),
+            if (isCurrent) const SizedBox(width: 6),
+            Text(t, style: TextStyle(fontSize: 12,
+                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
+          ]),
+        );
+      }).toList(),
+    ).then((v) {
+      if (v != null && v != current) {
+        _commitSpecialEdit(uuuid, 0, v);
+      }
+    });
+  }
+
+  /// 日期列 (col 1) — 双击弹出日期选择器
+  Widget _buildDateCell(double width, String uuuid, String dateStr) {
+    return GestureDetector(
+      onDoubleTap: () => _showDatePickerForCell(uuuid, dateStr),
+      child: _cellWidget(width, Text(dateStr,
+          textAlign: TextAlign.center,
+          style: _cellBaseStyle.copyWith(color: const Color(0xFF334155)))),
+    );
+  }
+
+  Future<void> _showDatePickerForCell(String uuuid, String dateStr) async {
+    DateTime initial;
+    try {
+      initial = DateTime.parse(dateStr);
+    } catch (_) {
+      initial = DateTime.now();
+    }
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null && mounted) {
+      final newDate = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      await _commitSpecialEdit(uuuid, 1, newDate);
+    }
+  }
+
+  /// 通用文本编辑列 (cols 2/3/7) — 双击变为 TextField
+  Widget _buildTextEditCell(double width, String uuuid, int colIndex, String displayValue,
+      {bool isNumeric = false, bool monospace = false, bool bold = false, Color color = const Color(0xFF334155), String? editValue}) {
+    final editVal = editValue ?? displayValue;
+    if (_isEditing(uuuid, colIndex)) {
+      return SizedBox(
+        width: width,
+        child: TextField(
+          controller: _editCtrl,
+          focusNode: _editFocus,
+          style: _cellBaseStyle.copyWith(
+            color: color,
+            fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+            fontFamily: monospace ? 'Consolas' : null,
+          ),
+          textAlign: TextAlign.center,
+          keyboardType: isNumeric
+              ? const TextInputType.numberWithOptions(decimal: true)
+              : TextInputType.text,
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+              borderSide: const BorderSide(color: Color(0xFF4F46E5)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+              borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.5),
+            ),
+          ),
+          onSubmitted: (_) => _commitTextEdit(),
+          onTapOutside: (_) => _commitTextEdit(),
+        ),
+      );
+    }
+    return GestureDetector(
+      onDoubleTap: () => _startTextEdit(uuuid, colIndex, editVal),
+      child: _cellWidget(width, Text(displayValue,
+          textAlign: TextAlign.center,
+          softWrap: true,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: _cellBaseStyle.copyWith(
+            color: color,
+            fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+            fontFamily: monospace ? 'Consolas' : null,
+          ))),
+    );
+  }
+
+  /// 项目 / 类型列 (cols 5/6) — 双击变为 TextField + 下拉自动完成
+  Widget _buildAutocompleteCell(double width, String uuuid, int colIndex, String currentValue,
+      {required List<String> options, required Widget display}) {
+    if (_isEditing(uuuid, colIndex)) {
+      return SizedBox(
+        width: width,
+        child: Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _editCtrl,
+              focusNode: _editFocus,
+              style: const TextStyle(fontSize: 11),
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: '输入或选择...',
+                hintStyle: const TextStyle(fontSize: 10, color: Colors.grey),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: const BorderSide(color: Color(0xFF4F46E5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.5),
+                ),
+              ),
+              onSubmitted: (_) => _commitTextEdit(),
+              onTapOutside: (_) => _commitTextEdit(),
+            ),
+          ),
+          if (options.isNotEmpty)
+            PopupMenuButton<String>(
+              offset: const Offset(0, 28),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              icon: const Icon(Icons.arrow_drop_down, size: 18),
+              onSelected: (v) {
+                _editCtrl?.text = v;
+                _commitTextEdit();
+              },
+              itemBuilder: (_) => options.map((o) =>
+                  PopupMenuItem<String>(value: o, child: Text(o, style: const TextStyle(fontSize: 12)))
+              ).toList(),
+            ),
+        ]),
+      );
+    }
+    return GestureDetector(
+      onDoubleTap: () => _startTextEdit(uuuid, colIndex, currentValue == '-' ? '' : currentValue),
+      child: _cellWidget(width, display),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // 📊 数据表格（可拖拽列宽）
   // ═══════════════════════════════════════════════════════════════════
   Widget _buildTable() {
@@ -699,7 +960,7 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
             widget.onMultiSelectChanged({uuuid});
           },
           child: Container(
-            height: 52,
+            constraints: const BoxConstraints(minHeight: 52),
             decoration: BoxDecoration(
               color: isSelected
                   ? const Color(0xFFEEF2FF)
@@ -730,30 +991,41 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
                 ),
               ),
               // ── 列数据（每个 cell 后紧跟 8px 占位，匹配表头手柄宽度） ──
-              _cellWidget(columnWidths[0] ?? 50, _invoiceTypeIcon(invoiceType)),
+              // 0: 发票类型 — 双击弹出选择
+              _buildInvoiceTypeCell(columnWidths[0] ?? 50, uuuid, invoiceType),
               const SizedBox(width: 8),
-              _cell(columnWidths[1] ?? 100, date,
-                  color: const Color(0xFF334155)),
+              // 1: 日期 — 双击弹出日期选择器
+              _buildDateCell(columnWidths[1] ?? 100, uuuid, date),
               const SizedBox(width: 8),
-              _cell(columnWidths[2] ?? 150, title,
-                  color: const Color(0xFF64748B), bold: false),
+              // 2: 事由 — 双击文本编辑
+              _buildTextEditCell(columnWidths[2] ?? 150, uuuid, 2, title,
+                  color: const Color(0xFF64748B)),
               const SizedBox(width: 8),
-              _cell(columnWidths[3] ?? 80,
+              // 3: 金额 — 双击数字编辑（隐私模式下仍传递真实值）
+              _buildTextEditCell(columnWidths[3] ?? 80, uuuid, 3,
                   widget.isPrivacyHidden ? '****' : amount.toStringAsFixed(2),
+                  isNumeric: true, monospace: true, bold: true,
                   color: const Color(0xFF0F172A),
-                  bold: true,
-                  monospace: true),
+                  editValue: amount.toStringAsFixed(2)),
               const SizedBox(width: 8),
+              // 4: 状态 — 单击下拉（保持原有交互）
               _cellWidget(
                   columnWidths[4] ?? 100,
                   _statusDropdown(uuuid, status, statusClr)),
               const SizedBox(width: 8),
-              _cellWidget(columnWidths[5] ?? 100,
-                  project == '-' ? Text('-', style: _cellStyle()) : _tag(project, bg: const Color(0xFFE0F2FE), fg: const Color(0xFF0284C7))),
+              // 5: 项目 — 双击编辑 + 下拉自动完成
+              _buildAutocompleteCell(columnWidths[5] ?? 100, uuuid, 5, project,
+                  options: _existingProjects,
+                  display: project == '-' ? Text('-', style: _cellStyle()) : _tag(project, bg: const Color(0xFFE0F2FE), fg: const Color(0xFF0284C7))),
               const SizedBox(width: 8),
-              _cellWidget(columnWidths[6] ?? 100, _typeTag(type)),
+              // 6: 类型 — 双击编辑 + 下拉自动完成
+              _buildAutocompleteCell(columnWidths[6] ?? 100, uuuid, 6, type,
+                  options: _existingTypes,
+                  display: _typeTag(type)),
               const SizedBox(width: 8),
-              _cell(columnWidths[7] ?? 120, remark, color: const Color(0xFF64748B)),
+              // 7: 备注 — 双击文本编辑
+              _buildTextEditCell(columnWidths[7] ?? 120, uuuid, 7, remark,
+                  color: const Color(0xFF64748B)),
             ]),
           ),
         );
@@ -762,26 +1034,6 @@ class _ExpenseTablePanelState extends State<ExpenseTablePanel>
   }
 
   /// 通用文本单元格 — 居中、支持换行
-  Widget _cell(double width, String text,
-      {Color color = const Color(0xFF334155),
-      bool bold = false,
-      bool monospace = false}) {
-    return _cellWidget(
-      width,
-      Text(
-        text,
-        textAlign: TextAlign.center,
-        softWrap: true,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: _cellBaseStyle.copyWith(
-          color: color,
-          fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
-          fontFamily: monospace ? 'Consolas' : null,
-        ),
-      ),
-    );
-  }
 
   Widget _cellWidget(double width, Widget child) {
     return SizedBox(

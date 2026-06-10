@@ -150,6 +150,21 @@ class ExpenseService {
     throw Exception(err['detail'] ?? '状态更新失败: ${resp.statusCode}');
   }
 
+  /// 通用局部更新 — 传入字段字典，前端传什么就改什么
+  ///
+  /// 示例：`updateExpense(uuid, {'title': '新事由', 'amount': 99.9})`
+  static Future<void> updateExpense(
+      String uuuid, Map<String, dynamic> fields) async {
+    final resp = await _patch(
+      Uri.parse('$_base/api/expenses/$uuuid'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(fields),
+    );
+    if (resp.statusCode == 200) return;
+    final err = json.decode(utf8.decode(resp.bodyBytes));
+    throw Exception(err['detail'] ?? '更新失败: ${resp.statusCode}');
+  }
+
   /// 物理删除一条开销记录（后端自动级联删除关联发票 + PDF）
   static Future<bool> deleteExpense(String uuuid) async {
     final resp = await _delete(Uri.parse('$_base/api/expenses/$uuuid'));
