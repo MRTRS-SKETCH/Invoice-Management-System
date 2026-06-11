@@ -17,7 +17,7 @@ Windows 桌面应用，管理企业业务开销全生命周期（开票 → 报�
 
 ```bash
 # 安装依赖
-cd core_api && pip install -r requirements.txt
+cd core_api && pip install -r requirements.txt uvicorn
 cd app_ui && flutter pub get
 
 # 开发运行（Sidecar 自动管理后端生命周期，推荐）
@@ -40,7 +40,7 @@ cd core_api && pytest -m integration   # 仅集成测试
 
 ```
 core_api/                        # Python 后端
-├── main.py                      # FastAPI 入口：config → db → log → 建表 → routes → 端口扫描 → PID/port.txt
+├── main.py                      # FastAPI 入口（CORS 已移除，桌面端无需跨域）：config → db → log → 建表 → routes → 端口扫描 → PID/port.txt
 └── app/
     ├── database.py              # init_database(db_dir) 延迟初始化 + engine + SessionLocal + Base + WAL pragma
     ├── models.py                # ExpenseRecord + InvoiceRecord（uuuid 主键，saved_path 存相对路径）
@@ -49,7 +49,7 @@ core_api/                        # Python 后端
     ├── config_manager.py        # 配置中心：load/save_config、validate_paths、PDF 分片、preview_directory_structure
     ├── logger_config.py         # setup_loguru(log_dir) 参数化 + 劫持 uvicorn/fastapi logging
     ├── routers/
-    │   ├── expenses.py          # /api/expenses — CRUD + block/unblock
+    │   ├── expenses.py          # /api/expenses — CRUD + block/unblock + 导出 PDF
     │   ├── invoices.py          # /api/invoices — PDF 绑定/解绑 + pdfplumber 自动解析建档 + PDF 分片存储
     │   ├── dashboard.py         # /api/dashboard — summary/trend/distribution/heatmap/type-distribution
     │   ├── client_logs.py       # /api/client-logs/batch — 接收前端批量日志
@@ -58,25 +58,12 @@ core_api/                        # Python 后端
         └── invoice_parser.py    # pdfplumber 解析发票 PDF（提取金额/日期/类型）
 
 core_api/tests/                  # pytest 测试套件
-├── conftest.py                  # 全局 fixture：隔离临时目录 + 内存 SQLite + TestClient
+├── conftest.py                  # 全局 fixture：隔离临时目录 + 内存 SQLite + monkeypatch config_manager
 ├── fixtures/                    # 共享测试数据夹具
-├── unit/                        # 单元测试（纯逻辑，无 IO）
-│   ├── test_config_manager.py
-│   ├── test_crud.py
-│   ├── test_database.py
-│   ├── test_invoice_parser.py
-│   ├── test_logger_config.py
-│   ├── test_models.py
-│   ├── test_schemas.py
-│   └── test_smoke.py
-└── integration/                 # 集成测试（FastAPI TestClient + SQLite :memory:）
-    ├── test_routers_expenses.py
-    ├── test_routers_invoices.py
-    ├── test_routers_dashboard.py
-    ├── test_routers_client_logs.py
-    └── test_routers_settings.py
+├── unit/                        # 单元测试（纯逻辑，无 IO）— 8 个文件：test_config_manager, test_crud, test_database, test_invoice_parser, test_logger_config, test_models, test_schemas, test_smoke
+└── integration/                 # 集成测试（FastAPI TestClient + SQLite :memory:）— 5 个文件：按 router 命名
 
-pytest.ini                       # pytest 配置：标记注册（unit/integration/slow）、路径、超时、警告过滤
+pytest.ini                       # pytest 配置：标记注册（unit/integration/slow）、pythonpath = .、超时、警告过滤
 
 app_ui/                          # Flutter 前端
 ├── lib/
@@ -102,13 +89,13 @@ app_ui/                          # Flutter 前端
 │           ├── batch_upload_dialog.dart # 批量上传进度遮罩（毛玻璃 + 圆形进度条）
 │           └── column_width_manager.dart# 列宽持久化 mixin（ColumnWidthManager）
 ├── windows/                     # Win32 原生层（CMake + C++ runner）
-└── pubspec.yaml                 # 依赖：http, window_manager, shared_preferences, desktop_drop, syncfusion_flutter_pdfviewer, fl_chart, file_picker
+└── pubspec.yaml                 # 依赖：http, window_manager, shared_preferences, desktop_drop, syncfusion_flutter_pdfviewer, fl_chart, file_picker（shared_preferences 声明但实际未使用，ConfigStorage 已替代）
 
 integrity_checker.py             # 完整性校验模板：MANIFEST_B64 占位符，构建时注入 SHA256 清单
 build_app.py                     # 一键打包：清理 → Nuitka → Flutter build → 拼装 → zip → 编译 完整性校验.exe
 ```
 
-**Sidecar 生命周期**：Flutter 启动 → `runApp()` → `_cleanGhostProcess()`（读 PID 文件精准杀，回退端口反查）→ `_startBackendEngine()` → 等 `port.txt` 写入 → 更新 `AppConfig.baseUrl` → 健康检查 → `_backendReadyCompleter.complete()` → Dashboard 收到信号后发起 API 请求。窗口关闭时 `onWindowClose()` 杀后端 + 删 PID 文件。
+**Sidecar 生命周期**：Flutter 启动 → `runApp()` → `_cleanGhostProcess()`（读 PID 文件精准杀，回退端口反查）→ `_startBackendEngine()`（dev: python -X utf8, prod: api_server/main.exe）→ 等 `port.txt` 写入 → 更新 `AppConfig.baseUrl` → 健康检查 → `_backendReadyCompleter.complete()` → Dashboard 收到信号后发起 API 请求。窗口关闭时 `onWindowClose()` 杀后端 + 删 PID 文件。配置变更时 `restartBackend()` 重置 Completer → 杀旧进程 → 800ms 等待 → 重新拉起。
 
 ## Conventions
 
@@ -116,7 +103,7 @@ build_app.py                     # 一键打包：清理 → Nuitka → Flutter 
 - **日志**：后端用 `loguru.logger`，前端用 `AppLogger.info/warning/error`（fire-and-forget，不抛异常）。禁止裸 `print()` 或 `logging.getLogger()`
 - **数据库**：所有会话通过 `Depends(get_db)` 获取，用后自动 close。SQLite 必须启用 WAL 模式。engine 通过 `init_database(db_dir)` 延迟初始化，不可在模块导入时创建
 - **配置**：`config/config.json` 管理 db/log 路径。`config_manager.py` 为唯一读写入口，禁止绕过直接读文件。变更路径需重启后端生效
-- **状态机**：`VALID_TRANSITIONS` 定义在 `crud.py`，当前代码已解除流转限制；屏蔽态走 `blocked_from_status` 旁路，恢复时还原原状态
+- **状态机**：`update_expense` 已解除流转限制，允许自由切换任意状态；`VALID_TRANSITIONS` 字典仍保留在 `crud.py` 但不再被使用。屏蔽态走 `blocked_from_status` 旁路，恢复时还原原状态
 - **HTTP 响应解码**：Flutter 端统一用 `utf8.decode(resp.bodyBytes)`，不用 `resp.body`，避免 Windows GBK 乱码
 - **REST 风格**：所有 API 前缀 `/api/`，GET 列表、POST 创建、PATCH 局部更新、DELETE 删除
 - **文件组织**：业务逻辑集中在 `crud.py`（非 router 内嵌），router 只做参数解析 + 错误转换
@@ -130,6 +117,7 @@ build_app.py                     # 一键打包：清理 → Nuitka → Flutter 
 - **设置防抖**：路径输入框 `_onPathChanged` 用 400ms Timer 防抖，避免拖动时刷屏 API 请求
 - **端口**：后端自动扫描 18090–18109 首个可用端口；前端从 `config/port.txt` 读取实际端口；禁止硬编码端口号
 - **命名**：Python 用 snake_case，Dart 用 lowerCamelCase，SQLite 列名用 snake_case
+- **环境变量**：后端通过 `PYTHONIOENCODING=utf-8` 和 `PYTHONUTF8=1` 确保编码；dev 模式传递 `-X utf8` 参数给 Python
 
 ## Notes
 

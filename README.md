@@ -16,7 +16,7 @@ Windows 桌面应用 — 管理企业业务开销的全生命周期：开票 →
 │  ┌───────────────────────────────────────┐    │
 │  │        core_api (FastAPI)              │    │
 │  │  routers → crud → SQLAlchemy → SQLite  │    │
-│  │  端口自动扫描 (18090+)                   │    │
+│  │  端口自动扫描 (18090–18109)                   │    │
 │  │  config/config.json 管理路径             │    │
 │  └───────────────────────────────────────┘    │
 │                                               │
@@ -30,7 +30,7 @@ Windows 桌面应用 — 管理企业业务开销的全生命周期：开票 →
 | 层 | 技术 | 说明 |
 |---|---|---|
 | 前端 | Flutter 3.11+ · Dart | Windows 桌面，自定义标题栏，`window_manager` 窗口控制 |
-| 后端 | FastAPI 0.136 · Uvicorn 0.46 | REST API，端口自动扫描 18090+，PID 文件管理 |
+| 后端 | FastAPI 0.136 · Uvicorn 0.46 | REST API，端口自动扫描 18090–18109，PID 文件管理 |
 | ORM | SQLAlchemy 2.0 | 延迟初始化 + 连接池 + `Depends(get_db)` 依赖注入 |
 | 校验 | Pydantic 2.13 | 请求/响应模型校验 |
 | 数据库 | SQLite | WAL 模式，路径由 `config/config.json` 管理，用户可自定义 |
@@ -70,7 +70,7 @@ Windows 桌面应用 — 管理企业业务开销的全生命周期：开票 →
 ### 安装依赖
 
 ```bash
-cd core_api && pip install -r requirements.txt
+cd core_api && pip install -r requirements.txt uvicorn
 cd app_ui && flutter pub get
 ```
 
@@ -90,7 +90,7 @@ cd app_ui && flutter run -d windows    # 终端 2：前端
 
 ## 配置文件
 
-首次运行自动在 `api_server/config/` 下生成 `config.json`：
+首次运行自动在 `config/` 下生成 `config.json`（开发模式位于 `core_api/config/`，生产模式位于 `api_server/config/`）：
 
 ```json
 {
@@ -135,14 +135,16 @@ cd app_ui && flutter run -d windows    # 终端 2：前端
 │   │           ├── batch_upload_dialog.dart # 批量上传进度遮罩
 │   │           └── column_width_manager.dart# 列宽持久化 mixin
 │   ├── windows/                      # Windows 原生层 (C++/CMake)
-│   └── pubspec.yaml                  # http, window_manager, shared_preferences, desktop_drop,
-│                                     #   fl_chart, syncfusion_flutter_pdfviewer, file_picker
+│   └── pubspec.yaml                  # http, window_manager, desktop_drop, fl_chart,
+│                                     #   syncfusion_flutter_pdfviewer, file_picker（shared_preferences
+│                                     #   声明但实际未使用，已被 ConfigStorage 替代）
 ├── core_api/                         # Python 后端
 │   ├── main.py                       # FastAPI 入口 · 端口扫描 · PID/port.txt · 自动建表
 │   ├── requirements.txt
 │   ├── pytest.ini                    # pytest 配置（unit/integration/slow 标记）
 │   ├── tests/                        # pytest 测试套件
 │   │   ├── conftest.py               # 全局 fixture（隔离环境 + 内存 SQLite）
+│   │   ├── fixtures/                 # 共享测试数据夹具
 │   │   ├── unit/                     # 单元测试（纯逻辑，无 IO）
 │   │   └── integration/              # 集成测试（FastAPI TestClient）
 │   └── app/
